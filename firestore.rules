@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper: check if current user is admin
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Config - only admin can write
+    match /config/{doc} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // Invites - admin only
+    match /invites/{inviteId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Users - users can read/update own doc, admins can read/write all
+    match /users/{userId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        isAdmin()
+      );
+      // Users can update own doc but cannot change role or disabled fields
+      allow update: if request.auth != null &&
+        request.auth.uid == userId &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.get('disabled', false) == resource.data.get('disabled', false);
+      // Admins can write any user doc (role changes, disable, etc.)
+      allow write: if isAdmin();
+    }
+
+    // Projects - users can access own non-deleted projects, admins can access all
+    match /projects/{projectId} {
+      allow read: if request.auth != null && (
+        (resource.data.userId == request.auth.uid && resource.data.status != 'deleted') ||
+        isAdmin()
+      );
+      allow write: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null &&
+          get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid;
+      }
+
+      match /snapshots/{snapshotId} {
+        allow read, write: if request.auth != null &&
+          get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid;
+      }
+
+      match /deployments/{deploymentId} {
+        allow read: if request.auth != null &&
+          get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid;
+      }
+    }
+  }
+}

@@ -6,12 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "e2e": "npx tsx scripts/e2e-test.ts",
+    "e2e:simple": "npx tsx scripts/e2e-test.ts simple"
   },
   "dependencies": {
+    "@google-cloud/vertexai": "^1.10.0",
+    "@webcontainer/api": "^1.6.1",
+    "clsx": "^2.1.1",
+    "firebase": "^12.9.0",
+    "firebase-admin": "^13.6.1",
+    "google-auth-library": "^10.5.0",
+    "lucide-react": "^0.563.0",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -21,6 +31,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
