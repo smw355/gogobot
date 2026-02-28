@@ -40,6 +40,10 @@ yarn-error.log*
 .vscode/
 .claude/
 
+# GCP credentials
+*-sa-key.json
+.env.generated
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
