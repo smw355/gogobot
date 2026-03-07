@@ -39,8 +39,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       {/* Header */}
       <header className="shrink-0 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-          <Link href="/projects" className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-            Gogobot
+          <Link href="/projects" className="flex items-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="Gogobot" className="h-7 dark:invert" />
           </Link>
 
           <div className="flex items-center gap-4">

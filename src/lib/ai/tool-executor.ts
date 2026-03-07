@@ -2,7 +2,7 @@ import { WebContainerManager } from '../webcontainer/manager';
 import { ToolCall } from './types';
 
 // Tools that execute server-side via API (need GCP credentials)
-const SERVER_SIDE_TOOLS = ['getProjectInfo', 'enableApi', 'viewLogs', 'gcpRequest'];
+const SERVER_SIDE_TOOLS = ['getProjectInfo', 'enableApi', 'viewLogs', 'gcpRequest', 'getSecrets', 'getSecretValue'];
 
 export interface ToolExecutorOptions {
   projectId: string;
@@ -150,25 +150,8 @@ export class ToolExecutor {
             throw new Error('Authentication required to deploy');
           }
 
-          // Build the project first (vite build), then deploy the dist/ output
-          let files: Record<string, string>;
-          try {
-            files = await this.container.buildForDeploy();
-          } catch (buildError: any) {
-            console.warn('Build failed:', buildError.message);
-            // Only fall back to source files if they're safe to deploy as-is
-            const sourceFiles = getFiles();
-            const indexHtml = sourceFiles['index.html'] || '';
-            const hasUnbundledCode = /\.(jsx|tsx|ts)\b/.test(indexHtml);
-            if (hasUnbundledCode) {
-              throw new Error(
-                `Build failed: ${buildError.message}. The project uses JSX/TypeScript which must be compiled before deployment. Please fix the build configuration.`
-              );
-            }
-            // Simple HTML/CSS/JS project - source files are fine
-            files = sourceFiles;
-          }
-
+          // Send source files to the server — it handles building and deploying.
+          const files = getFiles();
           if (!files || Object.keys(files).length === 0) {
             throw new Error('No files to deploy. Build something first!');
           }

@@ -195,12 +195,164 @@ export async function POST(
           result = { success: false, error: 'Cloud project not ready yet' };
           break;
         }
-        // TODO: Implement Cloud Logging API query
+
+        try {
+          const token = await getGcpAccessToken();
+
+          // Build filter string
+          const hours = Math.min(Math.max(args?.hours || 1, 0.1), 24);
+          const limit = Math.min(Math.max(args?.limit || 50, 1), 200);
+          const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+          const filterParts: string[] = [`timestamp >= "${since}"`];
+
+          if (args?.severity) {
+            const validSeverities = ['DEFAULT', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'];
+            const sev = args.severity.toUpperCase();
+            if (validSeverities.includes(sev)) {
+              filterParts.push(`severity >= ${sev}`);
+            }
+          }
+
+          if (args?.resourceType) {
+            filterParts.push(`resource.type = "${args.resourceType}"`);
+          }
+
+          if (args?.query) {
+            filterParts.push(args.query);
+          }
+
+          const requestBody = {
+            resourceNames: [`projects/${gcpProjectId}`],
+            filter: filterParts.join('\n'),
+            orderBy: 'timestamp desc',
+            pageSize: limit,
+          };
+
+          const logsResponse = await fetch(
+            'https://logging.googleapis.com/v2/entries:list',
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(requestBody),
+            }
+          );
+
+          if (!logsResponse.ok) {
+            const errData = await logsResponse.json().catch(() => ({}));
+            const errMsg = errData?.error?.message || logsResponse.statusText;
+
+            // Check if Cloud Logging API isn't enabled
+            if (logsResponse.status === 403 || errMsg.includes('not been used') || errMsg.includes('PERMISSION_DENIED')) {
+              result = {
+                success: false,
+                error: `Cloud Logging API may not be enabled for this project. Use the enableApi tool to enable "logging.googleapis.com" first.`,
+              };
+            } else {
+              result = { success: false, error: `Cloud Logging API error: ${errMsg}` };
+            }
+            break;
+          }
+
+          const logsData = await logsResponse.json();
+          const entries = logsData.entries || [];
+
+          // Format entries into a concise structure
+          const logs = entries.map((entry: any) => {
+            const message =
+              entry.textPayload ||
+              entry.jsonPayload?.message ||
+              (entry.jsonPayload ? JSON.stringify(entry.jsonPayload) : '') ||
+              entry.protoPayload?.status?.message ||
+              '';
+
+            return {
+              timestamp: entry.timestamp,
+              severity: entry.severity || 'DEFAULT',
+              message: message.length > 500 ? message.slice(0, 500) + '...' : message,
+              resource: entry.resource?.type || 'unknown',
+              labels: entry.resource?.labels
+                ? Object.fromEntries(
+                    Object.entries(entry.resource.labels).filter(
+                      ([k]) => ['service_name', 'revision_name', 'function_name', 'site_id'].includes(k)
+                    )
+                  )
+                : {},
+              ...(entry.httpRequest ? {
+                httpRequest: {
+                  method: entry.httpRequest.requestMethod,
+                  url: entry.httpRequest.requestUrl,
+                  status: entry.httpRequest.status,
+                },
+              } : {}),
+            };
+          });
+
+          result = {
+            success: true,
+            logs,
+            count: logs.length,
+            filter: filterParts.join(' AND '),
+            message: logs.length === 0
+              ? `No logs found in the last ${hours} hour(s). The service may not have received any traffic, or Cloud Logging may not be enabled.`
+              : `Found ${logs.length} log entries from the last ${hours} hour(s).`,
+          };
+        } catch (err: any) {
+          result = { success: false, error: `Failed to fetch logs: ${err.message}` };
+        }
+        break;
+      }
+
+      case 'getSecrets': {
+        const secretsSnapshot = await db
+          .collection('projects')
+          .doc(projectId)
+          .collection('secrets')
+          .get();
+
+        const secretNames = secretsSnapshot.docs.map((doc) => doc.id);
         result = {
           success: true,
-          logs: [],
-          message: 'Cloud Logging integration coming soon. Check the GCP Console for logs.',
+          secrets: secretNames,
+          count: secretNames.length,
+          message: secretNames.length === 0
+            ? 'No secrets configured. The user can add API keys via the Secrets panel.'
+            : `Found ${secretNames.length} secret(s): ${secretNames.join(', ')}. Use __ENV__{NAME}__ placeholders in client-side code — they get replaced at deploy time. Use getSecretValue for server-side use.`,
         };
+        break;
+      }
+
+      case 'getSecretValue': {
+        const secretName = args?.name;
+        if (!secretName || typeof secretName !== 'string') {
+          result = { success: false, error: 'Secret name is required' };
+          break;
+        }
+
+        // Check the secret exists in our index
+        const secretDoc = await db
+          .collection('projects')
+          .doc(projectId)
+          .collection('secrets')
+          .doc(secretName)
+          .get();
+
+        if (!secretDoc.exists) {
+          result = { success: false, error: `Secret "${secretName}" not found. Use getSecrets to see available secrets.` };
+          break;
+        }
+
+        try {
+          const { smGetSecretValue } = await import('@/app/api/projects/[projectId]/secrets/route');
+          const secretId = `gogobot-${projectId}-${secretName}`;
+          const value = await smGetSecretValue(secretId);
+          result = { success: true, name: secretName, value };
+        } catch (err: any) {
+          result = { success: false, error: `Failed to retrieve secret: ${err.message}` };
+        }
         break;
       }
 

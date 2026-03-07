@@ -120,13 +120,17 @@ export default function ProjectPage() {
 
     setIsDeploying(true);
     setDeployError(null);
-    const result = await deployRef.current.deploy();
-    setIsDeploying(false);
-
-    if (result.success && result.url) {
-      setDeploymentUrl(result.url);
-    } else if (result.error) {
-      setDeployError(result.error);
+    try {
+      const result = await deployRef.current.deploy();
+      if (result.success && result.url) {
+        setDeploymentUrl(result.url);
+      } else if (result.error) {
+        setDeployError(result.error);
+      }
+    } catch (err: any) {
+      setDeployError(err.message || 'Deployment failed');
+    } finally {
+      setIsDeploying(false);
     }
   };
 

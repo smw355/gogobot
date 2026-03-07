@@ -509,6 +509,7 @@ export function useChat(
   }, [projectId]);
 
   // Manual deploy function (for Deploy button)
+  // Sends source files to the server which handles building and deploying.
   const deployProject = useCallback(async () => {
     setIsDeploying(true);
     setError(null);
@@ -521,37 +522,18 @@ export function useChat(
         throw new Error('Authentication required. Please sign in.');
       }
 
-      // Require container to be ready for building
-      if (!containerManager) {
-        throw new Error('Workspace is still loading. Please wait for it to finish and try again.');
+      if (!files || Object.keys(files).length === 0) {
+        throw new Error('No files to deploy. Build something first!');
       }
 
-      // Build the project first, then deploy built output
-      let deployFiles: Record<string, string>;
-      try {
-        deployFiles = await containerManager.buildForDeploy();
-      } catch (buildErr: any) {
-        console.warn('Build failed:', buildErr.message);
-        // Only fall back to source files if they're safe to deploy as-is
-        // (no JSX/TSX files referenced from index.html)
-        const indexHtml = files['index.html'] || '';
-        const hasUnbundledCode = /\.(jsx|tsx|ts)\b/.test(indexHtml);
-        if (hasUnbundledCode) {
-          throw new Error(
-            `Build failed: ${buildErr.message}. Your project uses JSX/TypeScript which must be compiled before deployment. Ask the AI to fix the build configuration.`
-          );
-        }
-        // Simple HTML/CSS/JS project - source files are fine
-        console.log('Deploying source files (no bundling needed)');
-        deployFiles = files;
-      }
-
+      // Send source files to the server — it handles building and deploying.
+      // This avoids the WebContainer build timeout issue.
       const response = await fetch(`/api/projects/${projectId}/deploy`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ files: deployFiles }),
+        body: JSON.stringify({ files }),
       });
 
       const result = await response.json();
@@ -568,7 +550,7 @@ export function useChat(
     } finally {
       setIsDeploying(false);
     }
-  }, [projectId, files, containerManager]);
+  }, [projectId, files]);
 
   return {
     messages,

@@ -9,6 +9,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Gogobot - AI Code Builder",
   description: "Build and deploy web applications with AI",
+  icons: {
+    icon: '/icon.svg',
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({

@@ -8,6 +8,7 @@ export class WebContainerManager {
   private static bootPromise: Promise<WebContainer> | null = null;
   private static serverReadyListenerAttached = false;
   private static devServerUrl: string | null = null;
+  private static devServerProcess: { kill: () => void } | null = null;
   private consoleBuffer: string[] = [];
   private errorBuffer: string[] = [];
 
@@ -135,6 +136,7 @@ export class WebContainerManager {
 
     console.log('Starting dev server...');
     const dev = await container.spawn('npm', ['run', 'dev']);
+    WebContainerManager.devServerProcess = dev;
 
     // Capture output to console and error buffers
     dev.output.pipeTo(
@@ -150,6 +152,17 @@ export class WebContainerManager {
         },
       })
     );
+  }
+
+  private async stopDevServer(): Promise<void> {
+    if (WebContainerManager.devServerProcess) {
+      console.log('Stopping dev server for build...');
+      try { WebContainerManager.devServerProcess.kill(); } catch {}
+      WebContainerManager.devServerProcess = null;
+      WebContainerManager.devServerUrl = null;
+      // Give it a moment to release resources
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   }
 
   async writeFile(path: string, content: string): Promise<void> {
@@ -332,66 +345,107 @@ export class WebContainerManager {
     const container = WebContainerManager.instance;
     if (!container) throw new Error('Container not initialized');
 
-    console.log('Building project for deployment...');
-    const build = await container.spawn('npm', ['run', 'build']);
-
-    let output = '';
-    const outputDone = build.output.pipeTo(
-      new WritableStream({
-        write: (chunk) => {
-          output += chunk;
-          const lines = chunk.split('\n').filter((l: string) => l.trim());
-          for (const line of lines) {
-            this.addToConsoleBuffer(line);
-          }
-        },
-      })
-    );
-
-    // Wait for both the process exit and output stream to complete
-    const [exitCode] = await Promise.all([build.exit, outputDone.catch(() => {})]);
-    if (exitCode !== 0) {
-      // Extract the last few meaningful lines from output for a better error message
-      const errorLines = output.split('\n').filter((l: string) => l.trim()).slice(-10).join('\n');
-      console.error('Build failed (exit code', exitCode, '):', errorLines);
-      throw new Error(`Build failed (exit code ${exitCode}):\n${errorLines}`);
+    // Check if package.json has a build script
+    try {
+      const pkgJson = await container.fs.readFile('package.json', 'utf-8');
+      const pkg = JSON.parse(pkgJson);
+      if (!pkg.scripts?.build) {
+        throw new Error('No build script in package.json');
+      }
+    } catch (e: any) {
+      if (e.message.includes('No build script')) throw e;
+      throw new Error('Could not read package.json');
     }
 
-    console.log('Build succeeded, reading dist/ files...');
+    // Stop the dev server to free up resources — WebContainer can't run both
+    await this.stopDevServer();
 
-    // Read all files from dist/ recursively
-    const distFiles: Record<string, string> = {};
-    const readDir = async (dirPath: string, prefix: string = '') => {
+    try {
+      console.log('Building project for deployment...');
+      const build = await container.spawn('npm', ['run', 'build']);
+
+      let output = '';
+      const outputDone = build.output.pipeTo(
+        new WritableStream({
+          write: (chunk) => {
+            output += chunk;
+            const lines = chunk.split('\n').filter((l: string) => l.trim());
+            for (const line of lines) {
+              this.addToConsoleBuffer(line);
+            }
+          },
+        })
+      );
+
+      // Wait for build with a 120-second timeout
+      const BUILD_TIMEOUT_MS = 120_000;
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(
+          'Build timed out after 2 minutes. The project may be too complex to build in the browser.'
+        )), BUILD_TIMEOUT_MS)
+      );
+
+      let exitCode: number;
       try {
-        const entries = await container.fs.readdir(dirPath, { withFileTypes: true });
-        for (const entry of entries) {
-          const fullPath = `${dirPath}/${entry.name}`;
-          const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const result = await Promise.race([
+          Promise.all([build.exit, outputDone.catch(() => {})]),
+          timeoutPromise,
+        ]);
+        exitCode = result[0];
+      } catch (e: any) {
+        // Kill the build process on timeout
+        try { build.kill(); } catch {}
+        throw e;
+      }
 
-          if (entry.isDirectory()) {
-            await readDir(fullPath, relativePath);
-          } else if (entry.isFile()) {
-            try {
-              const content = await container.fs.readFile(fullPath, 'utf-8');
-              distFiles[relativePath] = content;
-            } catch {
-              // Skip binary files that can't be read as utf-8
+      if (exitCode !== 0) {
+        const errorLines = output.split('\n').filter((l: string) => l.trim()).slice(-10).join('\n');
+        console.error('Build failed (exit code', exitCode, '):', errorLines);
+        throw new Error(`Build failed (exit code ${exitCode}):\n${errorLines}`);
+      }
+
+      console.log('Build succeeded, reading dist/ files...');
+
+      // Read all files from dist/ recursively
+      const distFiles: Record<string, string> = {};
+      const readDir = async (dirPath: string, prefix: string = '') => {
+        try {
+          const entries = await container.fs.readdir(dirPath, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = `${dirPath}/${entry.name}`;
+            const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+
+            if (entry.isDirectory()) {
+              await readDir(fullPath, relativePath);
+            } else if (entry.isFile()) {
+              try {
+                const content = await container.fs.readFile(fullPath, 'utf-8');
+                distFiles[relativePath] = content;
+              } catch {
+                // Skip binary files that can't be read as utf-8
+              }
             }
           }
+        } catch {
+          // Directory doesn't exist
         }
-      } catch {
-        // Directory doesn't exist
+      };
+
+      await readDir('dist');
+
+      if (Object.keys(distFiles).length === 0) {
+        throw new Error('Build produced no output files in dist/. Check your build configuration.');
       }
-    };
 
-    await readDir('dist');
-
-    if (Object.keys(distFiles).length === 0) {
-      throw new Error('Build produced no output files in dist/. Check your build configuration.');
+      console.log(`Build produced ${Object.keys(distFiles).length} files:`, Object.keys(distFiles));
+      return distFiles;
+    } finally {
+      // Always restart the dev server after build (success or failure)
+      console.log('Restarting dev server...');
+      this.startDevServer().catch(err =>
+        console.error('Failed to restart dev server after build:', err)
+      );
     }
-
-    console.log(`Build produced ${Object.keys(distFiles).length} files:`, Object.keys(distFiles));
-    return distFiles;
   }
 
   async getFileTree(): Promise<FileSystemTree> {

@@ -133,12 +133,14 @@ function LoginForm() {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="Gogobot" className="mx-auto mb-4 h-10 dark:invert" />
           <CardTitle className="text-2xl">
             {inviteValid
               ? "You're Invited!"
               : isSignUp
                 ? 'Create Account'
-                : 'Welcome to Gogobot'}
+                : 'Sign in to continue'}
           </CardTitle>
           <CardDescription>
             {inviteValid

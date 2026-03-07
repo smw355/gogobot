@@ -24,6 +24,7 @@ const DEFAULT_APIS = [
   'firebasehosting.googleapis.com',
   'firebase.googleapis.com',
   'firestore.googleapis.com',
+  'logging.googleapis.com',
 ];
 
 let authClient: GoogleAuth | null = null;

@@ -48,6 +48,8 @@ function getModels() {
       generationConfig: {
         temperature: 0.7,
         maxOutputTokens: 65536,
+        // @ts-expect-error — thinkingConfig is supported by Gemini 3 but not yet in SDK types
+        thinkingConfig: { thinkingBudget: 2048 },
       },
     });
   }
@@ -240,6 +242,9 @@ export async function POST(
                 if (!candidate?.content?.parts) continue;
 
                 for (const part of candidate.content.parts) {
+                  // Skip thinking/reasoning parts — don't show internal reasoning to users
+                  if ((part as any).thought) continue;
+
                   if (part.text) {
                     assistantContent += part.text;
                     controller.enqueue(

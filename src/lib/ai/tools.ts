@@ -170,12 +170,30 @@ export const toolDeclarations: Tool[] = [
       {
         name: 'viewLogs',
         description:
-          'View recent logs from cloud services (Cloud Run, Cloud Functions, etc). Useful for debugging deployed applications.',
+          'View recent logs from the project\'s cloud services via Cloud Logging API. Returns structured log entries with timestamps, severity, and messages. Use this to debug deployed applications — check for errors after a deploy, investigate runtime issues, or monitor Cloud Run/Cloud Functions behavior.',
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
-            service: { type: SchemaType.STRING, description: 'Service to get logs from (e.g. "cloud-run", "functions")' },
-            lines: { type: SchemaType.NUMBER, description: 'Number of recent log entries to return (default: 50)' },
+            severity: {
+              type: SchemaType.STRING,
+              description: 'Minimum severity filter: DEFAULT, DEBUG, INFO, WARNING, ERROR, CRITICAL (default: DEFAULT — returns all)',
+            },
+            resourceType: {
+              type: SchemaType.STRING,
+              description: 'GCP resource type to filter by (e.g. "cloud_run_revision", "cloud_function", "firebase_hosting_site"). Default: all resources.',
+            },
+            query: {
+              type: SchemaType.STRING,
+              description: 'Additional Cloud Logging filter query (e.g. "textPayload:\"error\"" or "httpRequest.status>=500"). Combined with other filters using AND.',
+            },
+            hours: {
+              type: SchemaType.NUMBER,
+              description: 'How many hours back to search (default: 1, max: 24)',
+            },
+            limit: {
+              type: SchemaType.NUMBER,
+              description: 'Max number of log entries to return (default: 50, max: 200)',
+            },
           },
         },
       },
@@ -201,6 +219,31 @@ export const toolDeclarations: Tool[] = [
             },
           },
           required: ['url'],
+        },
+      },
+      // --- Secrets Tools (execute server-side) ---
+      {
+        name: 'getSecrets',
+        description:
+          'List the names of all secrets stored for this project. Returns names only, never values. Use this to check what API keys or credentials are available before building features that need them.',
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {},
+        },
+      },
+      {
+        name: 'getSecretValue',
+        description:
+          'Retrieve the actual value of a stored secret by name. Use this only when you need the value at runtime — for example, to configure a backend service or Cloud Run environment variable. For client-side code, use __ENV__{SECRET_NAME}__ placeholders instead, which get substituted at deploy time.',
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            name: {
+              type: SchemaType.STRING,
+              description: 'The secret name (e.g. "STRIPE_KEY", "OPENAI_API_KEY")',
+            },
+          },
+          required: ['name'],
         },
       },
     ],
