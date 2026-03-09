@@ -32,9 +32,21 @@ function LoginForm() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteValid, setInviteValid] = useState<boolean | null>(null);
   const [inviteChecking, setInviteChecking] = useState(false);
+  const [isFirstUser, setIsFirstUser] = useState(false);
 
-  // Check invite token from URL
+  // Check invite token from URL + whether this is a fresh instance
   useEffect(() => {
+    // Check if any users exist (first user can sign up without invite)
+    fetch('/api/auth/check-setup')
+      .then(res => res.json())
+      .then(data => {
+        if (data.needsSetup) {
+          setIsFirstUser(true);
+          setIsSignUp(true);
+        }
+      })
+      .catch(() => {});
+
     const token = searchParams.get('invite');
     if (!token) return;
 
@@ -108,7 +120,7 @@ function LoginForm() {
   };
 
   const handleSignUpToggle = () => {
-    if (!isSignUp && !inviteToken) {
+    if (!isSignUp && !inviteToken && !isFirstUser) {
       // Trying to sign up without invite — show message
       setError('You need an invite link to create an account. Contact your admin.');
       return;

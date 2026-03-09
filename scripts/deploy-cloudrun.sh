@@ -41,9 +41,35 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# ---- Load env file ----
+# ---- Load env file (safe parser — handles unquoted JSON values) ----
 [[ -f "$ENV_FILE" ]] || error "$ENV_FILE not found. Create it from .env.example first."
-source "$ENV_FILE"
+
+# Parse KEY=VALUE lines safely (handles JSON with spaces, commas, etc.)
+get_env() {
+  local key="$1"
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    local k="${line%%=*}"
+    k="$(echo "$k" | xargs)"
+    if [[ "$k" == "$key" ]]; then
+      echo "${line#*=}"
+      return
+    fi
+  done < "$ENV_FILE"
+}
+
+NEXT_PUBLIC_FIREBASE_API_KEY="$(get_env NEXT_PUBLIC_FIREBASE_API_KEY)"
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="$(get_env NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN)"
+NEXT_PUBLIC_FIREBASE_PROJECT_ID="$(get_env NEXT_PUBLIC_FIREBASE_PROJECT_ID)"
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="$(get_env NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET)"
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="$(get_env NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID)"
+NEXT_PUBLIC_FIREBASE_APP_ID="$(get_env NEXT_PUBLIC_FIREBASE_APP_ID)"
+NEXT_PUBLIC_BASE_URL="$(get_env NEXT_PUBLIC_BASE_URL)"
+FIREBASE_ADMIN_KEY="$(get_env FIREBASE_ADMIN_KEY)"
+GOOGLE_CLOUD_PROJECT_ID="$(get_env GOOGLE_CLOUD_PROJECT_ID)"
+GOOGLE_CLOUD_LOCATION="$(get_env GOOGLE_CLOUD_LOCATION)"
+GCP_BILLING_ACCOUNT_ID="$(get_env GCP_BILLING_ACCOUNT_ID)"
+GCP_FOLDER_ID="$(get_env GCP_FOLDER_ID)"
 
 PROJECT=${PROJECT:-${GOOGLE_CLOUD_PROJECT_ID:-""}}
 [[ -z "$PROJECT" ]] && error "No project ID. Set GOOGLE_CLOUD_PROJECT_ID in $ENV_FILE or pass --project"
@@ -67,36 +93,29 @@ ok "APIs enabled"
 info "Building container image via Cloud Build..."
 gcloud builds submit . \
   --project="$PROJECT" \
-  --tag="$IMAGE" \
-  --build-arg="NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}" \
-  --build-arg="NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}" \
-  --build-arg="NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}" \
-  --build-arg="NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}" \
-  --build-arg="NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}" \
-  --build-arg="NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}" \
-  --build-arg="NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL:-}" \
+  --config=cloudbuild.yaml \
+  --substitutions="_SERVICE_NAME=${SERVICE_NAME},_NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY},_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET},_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID},_NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID},_NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL:-}" \
   --quiet
 ok "Image built: $IMAGE"
 
 # ---- Collect server-side env vars for Cloud Run ----
-# These are NOT baked into the image — they're injected at runtime.
-ENV_VARS="NODE_ENV=production"
-ENV_VARS+=",FIREBASE_ADMIN_KEY=${FIREBASE_ADMIN_KEY}"
-ENV_VARS+=",GOOGLE_CLOUD_PROJECT_ID=${GOOGLE_CLOUD_PROJECT_ID}"
-ENV_VARS+=",GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}"
-ENV_VARS+=",GCP_BILLING_ACCOUNT_ID=${GCP_BILLING_ACCOUNT_ID}"
-ENV_VARS+=",GCP_FOLDER_ID=${GCP_FOLDER_ID}"
-
-# Include NEXT_PUBLIC vars at runtime too (for SSR)
-ENV_VARS+=",NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}"
-ENV_VARS+=",NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}"
-ENV_VARS+=",NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}"
-ENV_VARS+=",NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}"
-ENV_VARS+=",NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}"
-ENV_VARS+=",NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}"
+# Use ^||^ as delimiter instead of comma (FIREBASE_ADMIN_KEY contains commas in JSON)
+SEP="^||^"
+ENV_VARS="${SEP}NODE_ENV=production"
+ENV_VARS+="||GOOGLE_CLOUD_PROJECT_ID=${GOOGLE_CLOUD_PROJECT_ID}"
+ENV_VARS+="||GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}"
+ENV_VARS+="||GCP_BILLING_ACCOUNT_ID=${GCP_BILLING_ACCOUNT_ID}"
+ENV_VARS+="||GCP_FOLDER_ID=${GCP_FOLDER_ID}"
+ENV_VARS+="||FIREBASE_ADMIN_KEY=${FIREBASE_ADMIN_KEY}"
+ENV_VARS+="||NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}"
+ENV_VARS+="||NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}"
+ENV_VARS+="||NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}"
+ENV_VARS+="||NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}"
+ENV_VARS+="||NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}"
+ENV_VARS+="||NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}"
 
 if [[ -n "${NEXT_PUBLIC_BASE_URL:-}" ]]; then
-  ENV_VARS+=",NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}"
+  ENV_VARS+="||NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}"
 fi
 
 # ---- Deploy to Cloud Run ----
@@ -120,6 +139,30 @@ URL=$(gcloud run services describe "$SERVICE_NAME" \
   --project="$PROJECT" \
   --region="$REGION" \
   --format="value(status.url)" 2>/dev/null)
+
+# ---- Configure Firebase Auth ----
+info "Configuring Firebase Auth..."
+TOKEN=$(gcloud auth print-access-token 2>/dev/null)
+DOMAIN=$(echo "$URL" | sed 's|https://||')
+
+# Enable Email/Password sign-in
+curl -s -X PATCH \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT}/config" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "x-goog-user-project: $PROJECT" \
+  -d '{"signIn":{"email":{"enabled":true,"passwordRequired":true}}}' \
+  >/dev/null 2>&1
+
+# Add Cloud Run domain to Firebase Auth authorized domains
+curl -s -X PATCH \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT}/config" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "x-goog-user-project: $PROJECT" \
+  -d "{\"authorizedDomains\":[\"localhost\",\"${PROJECT}.firebaseapp.com\",\"${PROJECT}.web.app\",\"${DOMAIN}\"]}" \
+  >/dev/null 2>&1
+ok "Email/Password auth enabled, Cloud Run domain authorized"
 
 echo ""
 echo "========================================"

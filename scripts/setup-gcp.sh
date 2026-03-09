@@ -112,6 +112,18 @@ done
 wait
 ok "All APIs enabled"
 
+# ---- Step 2b: Enable Email/Password sign-in ----
+info "Enabling Email/Password sign-in in Firebase Auth..."
+TOKEN=$(gcloud auth print-access-token 2>/dev/null)
+curl -s -X PATCH \
+  "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT}/config" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "x-goog-user-project: $PROJECT" \
+  -d '{"signIn":{"email":{"enabled":true,"passwordRequired":true}}}' \
+  >/dev/null 2>&1
+ok "Email/Password auth enabled"
+
 # ---- Step 3: Set up Firestore ----
 info "Step 3/7: Creating Firestore database..."
 if gcloud firestore databases describe --project="$PROJECT" &>/dev/null; then
