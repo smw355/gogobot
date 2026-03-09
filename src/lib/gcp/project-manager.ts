@@ -436,20 +436,33 @@ async function waitForProjectOperation(operationName: string, maxWaitMs = 120000
 // ─── Billing ───────────────────────────────────────────────────────────────
 
 async function linkBillingAccount(projectId: string, billingAccountId: string): Promise<void> {
-  const res = await gcpFetch(
-    `https://cloudbilling.googleapis.com/v1/projects/${projectId}/billingInfo`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({
-        billingAccountName: `billingAccounts/${billingAccountId}`,
-        billingEnabled: true,
-      }),
-    }
-  );
+  // Retry up to 3 times — GCP sometimes returns "Precondition check failed"
+  // when the project isn't fully propagated yet
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await gcpFetch(
+      `https://cloudbilling.googleapis.com/v1/projects/${projectId}/billingInfo`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          billingAccountName: `billingAccounts/${billingAccountId}`,
+          billingEnabled: true,
+        }),
+      }
+    );
 
-  if (!res.ok) {
+    if (res.ok) return;
+
     const err = await res.json().catch(() => ({}));
-    throw new Error(`Failed to link billing: ${err.error?.message || res.statusText}`);
+    const message = err.error?.message || res.statusText;
+
+    // Retry on precondition failures (project not ready yet)
+    if (message.includes('Precondition') && attempt < 2) {
+      console.log(`Billing link attempt ${attempt + 1} failed (precondition), retrying in ${5 * (attempt + 1)}s...`);
+      await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+      continue;
+    }
+
+    throw new Error(`Failed to link billing: ${message}`);
   }
 }
 

@@ -47,7 +47,8 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
         cwd: tempDir,
         timeout: 60_000,
         stdio: 'pipe',
-        env: { ...process.env, NODE_ENV: 'production' },
+        // Don't set NODE_ENV=production here — devDependencies like vite are needed for the build
+        env: { ...process.env, NODE_ENV: 'development' },
       });
     } catch (e: any) {
       const stderr = e.stderr?.toString()?.slice(-500) || '';
