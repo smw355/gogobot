@@ -133,6 +133,41 @@ export default function SettingsGeneralPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Version</CardTitle>
+          <CardDescription>
+            Current build information
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-zinc-600 dark:text-zinc-400">Version:</span>
+              <span className="font-mono text-zinc-900 dark:text-zinc-100">
+                v{process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-600 dark:text-zinc-400">Build:</span>
+              <span className="font-mono text-zinc-900 dark:text-zinc-100">
+                {process.env.NEXT_PUBLIC_GIT_HASH || 'unknown'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-600 dark:text-zinc-400">Built:</span>
+              <span className="text-zinc-900 dark:text-zinc-100">
+                {process.env.NEXT_PUBLIC_BUILD_TIME
+                  ? new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('en-US', {
+                      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                    })
+                  : 'unknown'}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
