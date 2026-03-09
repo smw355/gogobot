@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/verify-session';
-import { createGcpProject, enableApi, getGcpProjectStatus } from '@/lib/gcp/project-manager';
+import { createGcpProject, enableApi, getGcpProjectStatus, configureStorageCors } from '@/lib/gcp/project-manager';
 import { GoogleAuth } from 'google-auth-library';
 
 export const dynamic = 'force-dynamic';
@@ -182,6 +182,15 @@ export async function POST(
               'gcpProject.enabledApis': [...currentApis, apiName],
               updatedAt: new Date(),
             });
+          }
+          // Auto-configure CORS when Cloud Storage is enabled
+          if (apiName === 'storage.googleapis.com') {
+            try {
+              await configureStorageCors(gcpProjectId);
+              console.log(`Storage CORS configured for ${gcpProjectId}`);
+            } catch (corsErr: any) {
+              console.warn(`Failed to configure Storage CORS:`, corsErr.message);
+            }
           }
           result = { success: true, message: `Enabled ${apiName}` };
         } catch (err: any) {

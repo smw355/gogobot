@@ -24,6 +24,7 @@ const DEFAULT_APIS = [
   'firebasehosting.googleapis.com',
   'firebase.googleapis.com',
   'firestore.googleapis.com',
+  'firebaserules.googleapis.com',
   'logging.googleapis.com',
 ];
 
@@ -377,6 +378,14 @@ export async function createGcpProject(
     } catch (err: any) {
       console.error(`Failed to create Firestore database:`, err.message);
     }
+
+    // Step 8: Set open Firestore security rules (sandbox projects allow all reads/writes)
+    try {
+      await setFirestoreRules(gcpProjectId);
+      console.log(`Firestore rules set for ${gcpProjectId}`);
+    } catch (err: any) {
+      console.error(`Failed to set Firestore rules:`, err.message);
+    }
   } catch (err: any) {
     console.error(`Failed to add Firebase:`, err.message);
   }
@@ -655,6 +664,124 @@ async function createFirestoreDatabase(projectId: string): Promise<void> {
       }
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
+  }
+}
+
+// ─── Firestore Security Rules ─────────────────────────────────────────────
+
+/**
+ * Set open Firestore security rules for a sandbox project.
+ * These projects are user sandboxes, so we allow all reads/writes.
+ */
+async function setFirestoreRules(projectId: string): Promise<void> {
+  const rules = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}`;
+
+  // Retry once if API isn't propagated yet
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // Step 1: Create a ruleset
+    const rulesetRes = await gcpFetch(
+      `https://firebaserules.googleapis.com/v1/projects/${projectId}/rulesets`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          source: {
+            files: [{ name: 'firestore.rules', content: rules }],
+          },
+        }),
+      }
+    );
+
+    if (!rulesetRes.ok) {
+      const err = await rulesetRes.json().catch(() => ({}));
+      if ((err.error?.code === 403 || err.error?.code === 404) && attempt === 0) {
+        // API may not be propagated yet — wait and retry
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue;
+      }
+      throw new Error(`Failed to create Firestore ruleset: ${err.error?.message || rulesetRes.statusText}`);
+    }
+
+    const ruleset = await rulesetRes.json();
+    const rulesetName = ruleset.name;
+
+    // Step 2: Deploy the ruleset as the active release
+    const releaseRes = await gcpFetch(
+      `https://firebaserules.googleapis.com/v1/projects/${projectId}/releases`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name: `projects/${projectId}/releases/cloud.firestore`,
+          rulesetName,
+        }),
+      }
+    );
+
+    if (!releaseRes.ok) {
+      // If release already exists, try updating it instead
+      const err = await releaseRes.json().catch(() => ({}));
+      if (err.error?.code === 409) {
+        const updateRes = await gcpFetch(
+          `https://firebaserules.googleapis.com/v1/projects/${projectId}/releases/cloud.firestore`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              name: `projects/${projectId}/releases/cloud.firestore`,
+              rulesetName,
+            }),
+          }
+        );
+        if (!updateRes.ok) {
+          const updateErr = await updateRes.json().catch(() => ({}));
+          throw new Error(`Failed to update Firestore rules release: ${updateErr.error?.message || updateRes.statusText}`);
+        }
+      } else {
+        throw new Error(`Failed to create Firestore rules release: ${err.error?.message || releaseRes.statusText}`);
+      }
+    }
+
+    return; // Success
+  }
+}
+
+// ─── Cloud Storage CORS ──────────────────────────────────────────────────
+
+/**
+ * Configure CORS on the default Firebase Storage bucket for a project.
+ * Allows all origins since these are sandbox projects with unpredictable hosting domains.
+ */
+export async function configureStorageCors(projectId: string): Promise<void> {
+  const bucket = `${projectId}.firebasestorage.app`;
+
+  const res = await gcpFetch(
+    `https://storage.googleapis.com/storage/v1/b/${bucket}?projection=full`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        cors: [{
+          origin: ['*'],
+          method: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD'],
+          maxAgeSeconds: 3600,
+          responseHeader: ['Content-Type', 'Authorization', 'Content-Length', 'X-Requested-With'],
+        }],
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    // 404 = bucket doesn't exist yet — that's fine, it'll be created later
+    if (err.error?.code === 404) {
+      console.log(`Storage bucket ${bucket} not found yet — CORS will need to be configured later`);
+      return;
+    }
+    throw new Error(`Failed to configure Storage CORS: ${err.error?.message || res.statusText}`);
   }
 }
 

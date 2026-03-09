@@ -265,11 +265,11 @@ When deployed, the app runs on Google Cloud with full capabilities. Each project
 
 **Always available (pre-provisioned):**
 - **Firebase Hosting** — Static site hosting with global CDN
-- **Firestore** — NoSQL document database (already enabled and database created)
+- **Firestore** — NoSQL document database (already enabled, database created, security rules set to allow all reads/writes)
 
 **Enable as needed (via \`enableApi\`):**
 - **Cloud Run** (\`run.googleapis.com\`) — Container hosting for backends and APIs
-- **Cloud Storage** (\`storage.googleapis.com\`) — File and media storage
+- **Cloud Storage** (\`storage.googleapis.com\`) — File and media storage (CORS is auto-configured when enabled)
 - **Cloud Functions** (\`cloudfunctions.googleapis.com\`) — Serverless functions
 - **Vertex AI** (\`aiplatform.googleapis.com\`) — AI/ML including Gemini models
 - **Cloud SQL** (\`sqladmin.googleapis.com\`) — Managed PostgreSQL/MySQL
