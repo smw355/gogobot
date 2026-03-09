@@ -165,7 +165,18 @@ export class ToolExecutor {
             body: JSON.stringify({ files }),
           });
 
-          const deployResult = await response.json();
+          let deployResult;
+          const responseText = await response.text();
+          try {
+            deployResult = JSON.parse(responseText);
+          } catch {
+            // Server returned non-JSON (e.g. "Service Unavailable" from Cloud Run)
+            onDeployComplete?.({ success: false, error: `Deploy server error: ${responseText.slice(0, 200)}` });
+            return {
+              success: false,
+              error: `Deploy failed — server returned: ${responseText.slice(0, 200)}. This usually means the build ran out of memory or time. Try again.`,
+            };
+          }
 
           if (!response.ok) {
             onDeployComplete?.({ success: false, error: deployResult.error });
@@ -226,7 +237,16 @@ export class ToolExecutor {
       }),
     });
 
-    const result = await response.json();
+    let result;
+    const text = await response.text();
+    try {
+      result = JSON.parse(text);
+    } catch {
+      return {
+        success: false,
+        error: `Server error (${response.status}): ${text.slice(0, 200)}`,
+      };
+    }
 
     if (!response.ok) {
       return {
