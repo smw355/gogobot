@@ -11,8 +11,9 @@ import type { WorkspaceStatus } from '@/components/chat/ChatInterface';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import type { Project } from '@/types';
-import { ArrowLeft, Rocket, ExternalLink, Cloud, AlertCircle, Loader2, Trash2, Lock } from 'lucide-react';
+import { ArrowLeft, Rocket, ExternalLink, Cloud, AlertCircle, Loader2, Trash2, Lock, ImageIcon } from 'lucide-react';
 import { SecretsPanel } from '@/components/secrets/SecretsPanel';
+import { AssetsPanel } from '@/components/assets/AssetsPanel';
 import Link from 'next/link';
 
 const WORKSPACE_STEP_LABELS: Record<string, string> = {
@@ -43,6 +44,7 @@ export default function ProjectPage() {
   const [deployError, setDeployError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
+  const [showAssets, setShowAssets] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const projectId = params.projectId as string;
@@ -233,6 +235,15 @@ export default function ProjectPage() {
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => setShowAssets(true)}
+            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+            title="Manage assets"
+          >
+            <ImageIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setShowSecrets(true)}
             className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
             title="Manage secrets"
@@ -277,6 +288,18 @@ export default function ProjectPage() {
                 Delete Project
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assets modal */}
+      {showAssets && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 w-full max-w-lg rounded-lg bg-white p-6 shadow-xl dark:bg-zinc-900">
+            <AssetsPanel
+              projectId={projectId}
+              onClose={() => setShowAssets(false)}
+            />
           </div>
         </div>
       )}

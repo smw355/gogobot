@@ -104,6 +104,7 @@ APIS=(
   cloudresourcemanager.googleapis.com
   firebase.googleapis.com
   firebasehosting.googleapis.com
+  storage.googleapis.com
 )
 for api in "${APIS[@]}"; do
   gcloud services enable "$api" --project="$PROJECT" 2>/dev/null &

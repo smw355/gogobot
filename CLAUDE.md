@@ -75,6 +75,7 @@ gcloud services enable serviceusage.googleapis.com     --project=$PROJECT  # Ser
 gcloud services enable cloudresourcemanager.googleapis.com --project=$PROJECT  # Resource Manager
 gcloud services enable firebase.googleapis.com         --project=$PROJECT  # Firebase Management
 gcloud services enable firebasehosting.googleapis.com  --project=$PROJECT  # Firebase Hosting
+gcloud services enable storage.googleapis.com          --project=$PROJECT  # Cloud Storage (asset uploads)
 ```
 
 ### Step 3: Set Up Firebase

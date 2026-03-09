@@ -2,7 +2,7 @@ import { WebContainerManager } from '../webcontainer/manager';
 import { ToolCall } from './types';
 
 // Tools that execute server-side via API (need GCP credentials)
-const SERVER_SIDE_TOOLS = ['getProjectInfo', 'enableApi', 'viewLogs', 'gcpRequest', 'getSecrets', 'getSecretValue'];
+const SERVER_SIDE_TOOLS = ['getProjectInfo', 'enableApi', 'viewLogs', 'gcpRequest', 'getSecrets', 'getSecretValue', 'listAssets'];
 
 export interface ToolExecutorOptions {
   projectId: string;

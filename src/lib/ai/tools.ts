@@ -246,6 +246,16 @@ export const toolDeclarations: Tool[] = [
           required: ['name'],
         },
       },
+      // --- Assets Tools (execute server-side) ---
+      {
+        name: 'listAssets',
+        description:
+          'List all uploaded assets (images, logos, PDFs, fonts, etc.) for this project. Returns names and public URLs. Use these URLs directly in img src, CSS background-image, link href, etc. — they work in both preview and production.',
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {},
+        },
+      },
     ],
   },
 ];

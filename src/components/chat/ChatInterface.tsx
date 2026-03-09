@@ -423,6 +423,12 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
     sendMessage(currentMessage);
   };
 
+  const handleAssetsUploaded = (assets: { name: string; url: string }[]) => {
+    const assetList = assets.map(a => `${a.name}: ${a.url}`).join('\n');
+    const msg = `I've uploaded ${assets.length === 1 ? 'a file' : `${assets.length} files`}. Please use ${assets.length === 1 ? 'it' : 'them'} in the app:\n${assetList}`;
+    sendMessage(msg);
+  };
+
   const isContainerReady = workspaceStep === 'ready';
   const hasMessages = messages.length > 0;
 
@@ -552,6 +558,8 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
               : "Setting up workspace..."
           }
           disabled={!isContainerReady}
+          projectId={project.id}
+          onAssetsUploaded={handleAssetsUploaded}
         />
       </div>
 

@@ -188,6 +188,10 @@ export async function POST(
     const secretsSnapshot = await db.collection('projects').doc(projectId).collection('secrets').get();
     const secretNames = secretsSnapshot.docs.map(d => d.id);
 
+    // Fetch uploaded asset URLs so the AI can reference them
+    const assetsSnapshot = await db.collection('projects').doc(projectId).collection('assets').get();
+    const assetUrls = assetsSnapshot.docs.map(d => ({ name: d.id, url: d.data().url as string }));
+
     // Save user message to Firestore (only for real user messages, not continuations)
     if (message && typeof message === 'string' && message.trim()) {
       const messagesRef = db.collection('projects').doc(projectId).collection('messages');
@@ -210,6 +214,7 @@ export async function POST(
             gcpProject: project.gcpProject || undefined,
             currentFiles: Array.isArray(currentFiles) ? currentFiles : undefined,
             secretNames: secretNames.length > 0 ? secretNames : undefined,
+            assetUrls: assetUrls.length > 0 ? assetUrls : undefined,
           });
 
           const { primaryModel, fallbackModel } = getModels();

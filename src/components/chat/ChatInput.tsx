@@ -3,6 +3,7 @@
 import { useRef, useEffect, KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { Send, Square } from 'lucide-react';
+import { FileUploadButton } from './FileUploadButton';
 
 interface ChatInputProps {
   value: string;
@@ -12,6 +13,8 @@ interface ChatInputProps {
   isLoading?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  projectId?: string;
+  onAssetsUploaded?: (assets: { name: string; url: string }[]) => void;
 }
 
 export function ChatInput({
@@ -22,6 +25,8 @@ export function ChatInput({
   isLoading,
   disabled,
   placeholder = 'Describe what you want to build...',
+  projectId,
+  onAssetsUploaded,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -46,6 +51,13 @@ export function ChatInput({
   return (
     <div className="border-t border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="relative flex items-end gap-2">
+        {projectId && onAssetsUploaded && (
+          <FileUploadButton
+            projectId={projectId}
+            onUploadComplete={onAssetsUploaded}
+            disabled={disabled}
+          />
+        )}
         <textarea
           ref={textareaRef}
           value={value}

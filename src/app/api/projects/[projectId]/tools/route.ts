@@ -356,6 +356,35 @@ export async function POST(
         break;
       }
 
+      case 'listAssets': {
+        const assetsSnapshot = await db
+          .collection('projects')
+          .doc(projectId)
+          .collection('assets')
+          .orderBy('uploadedAt', 'desc')
+          .get();
+
+        const assets = assetsSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            name: data.name,
+            url: data.url,
+            contentType: data.contentType,
+            size: data.size,
+          };
+        });
+
+        result = {
+          success: true,
+          assets,
+          count: assets.length,
+          message: assets.length === 0
+            ? 'No assets uploaded. The user can upload images, logos, PDFs, and other files via the paperclip button in chat.'
+            : `Found ${assets.length} asset(s). Use the URLs directly in your code (img src, CSS background-image, link href, etc.).`,
+        };
+        break;
+      }
+
       case 'gcpRequest': {
         if (!gcpProjectId) {
           result = { success: false, error: 'Cloud project not ready yet. Wait for provisioning to complete.' };

@@ -3,17 +3,26 @@ import { WebContainer, FileSystemTree } from '@webcontainer/api';
 const MAX_CONSOLE_LINES = 200;
 const MAX_ERROR_LINES = 100;
 
+// Store singleton on globalThis so it survives HMR / module re-evaluation
+const _g = globalThis as any;
+
 export class WebContainerManager {
-  private static instance: WebContainer | null = null;
-  private static bootPromise: Promise<WebContainer> | null = null;
-  private static serverReadyListenerAttached = false;
-  private static devServerUrl: string | null = null;
-  private static devServerProcess: { kill: () => void } | null = null;
+  private static get instance(): WebContainer | null { return _g.__wcInstance ?? null; }
+  private static set instance(v: WebContainer | null) { _g.__wcInstance = v; }
+  private static get bootPromise(): Promise<WebContainer> | null { return _g.__wcBootPromise ?? null; }
+  private static set bootPromise(v: Promise<WebContainer> | null) { _g.__wcBootPromise = v; }
+  private static get serverReadyListenerAttached(): boolean { return _g.__wcListenerAttached ?? false; }
+  private static set serverReadyListenerAttached(v: boolean) { _g.__wcListenerAttached = v; }
+  private static get devServerUrl(): string | null { return _g.__wcDevServerUrl ?? null; }
+  private static set devServerUrl(v: string | null) { _g.__wcDevServerUrl = v; }
+  private static get devServerProcess(): { kill: () => void } | null { return _g.__wcDevServerProcess ?? null; }
+  private static set devServerProcess(v: { kill: () => void } | null) { _g.__wcDevServerProcess = v; }
   private consoleBuffer: string[] = [];
   private errorBuffer: string[] = [];
 
   async initialize(projectId: string, initialFiles?: FileSystemTree): Promise<void> {
     // Boot WebContainer (singleton pattern - only boot once per page load)
+    // Instance & bootPromise live on globalThis so they survive HMR module re-evaluation
     if (!WebContainerManager.instance) {
       if (!WebContainerManager.bootPromise) {
         console.log('Booting WebContainer...');
@@ -204,17 +213,45 @@ export class WebContainerManager {
     if (!container) throw new Error('Container not initialized');
 
     const currentContent = await container.fs.readFile(path, 'utf-8');
-    if (!currentContent.includes(oldContent)) {
-      // Include the actual file content so the AI can see what's really there and retry
-      const truncated = currentContent.length > 2000
-        ? currentContent.slice(0, 2000) + '\n... (truncated)'
-        : currentContent;
-      throw new Error(
-        `Could not find the specified text in ${path}. The file may have been modified. Use readFile to see the current content, or here it is:\n\n${truncated}`
-      );
+
+    // Try exact match first
+    if (currentContent.includes(oldContent)) {
+      const updatedContent = currentContent.replace(oldContent, newContent);
+      await container.fs.writeFile(path, updatedContent);
+      return;
     }
-    const updatedContent = currentContent.replace(oldContent, newContent);
-    await container.fs.writeFile(path, updatedContent);
+
+    // Fuzzy match: normalize whitespace (trim trailing spaces per line, normalize line endings)
+    const normalize = (s: string) => s.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '');
+    const normalizedCurrent = normalize(currentContent);
+    const normalizedOld = normalize(oldContent);
+
+    if (normalizedCurrent.includes(normalizedOld)) {
+      // Find the actual substring in the original by matching line-by-line
+      const oldLines = normalizedOld.split('\n');
+      const currentLines = currentContent.split(/\r?\n/);
+
+      for (let i = 0; i <= currentLines.length - oldLines.length; i++) {
+        const slice = currentLines.slice(i, i + oldLines.length);
+        if (slice.every((line, j) => normalize(line) === oldLines[j])) {
+          // Found the matching region — replace those lines
+          const before = currentLines.slice(0, i).join('\n');
+          const after = currentLines.slice(i + oldLines.length).join('\n');
+          const prefix = before ? before + '\n' : '';
+          const suffix = after ? '\n' + after : '';
+          await container.fs.writeFile(path, prefix + newContent + suffix);
+          return;
+        }
+      }
+    }
+
+    // No match found — include the actual file content so the AI can retry
+    const truncated = currentContent.length > 2000
+      ? currentContent.slice(0, 2000) + '\n... (truncated)'
+      : currentContent;
+    throw new Error(
+      `Could not find the specified text in ${path}. The file may have been modified. Use readFile to see the current content, or here it is:\n\n${truncated}`
+    );
   }
 
   async deleteFile(path: string): Promise<void> {
