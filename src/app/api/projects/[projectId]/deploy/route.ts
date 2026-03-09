@@ -45,20 +45,21 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
     try {
       execSync('npm install --force', {
         cwd: tempDir,
-        timeout: 60_000,
+        timeout: 120_000,
         stdio: 'pipe',
         // Don't set NODE_ENV=production here — devDependencies like vite are needed for the build
         env: { ...process.env, NODE_ENV: 'development' },
       });
     } catch (e: any) {
       const stderr = e.stderr?.toString()?.slice(-500) || '';
-      throw new Error(`npm install failed: ${stderr}`);
+      const stdout = e.stdout?.toString()?.slice(-500) || '';
+      throw new Error(`npm install failed: ${stderr || stdout}`);
     }
 
     try {
       execSync('npm run build', {
         cwd: tempDir,
-        timeout: 60_000,
+        timeout: 120_000,
         stdio: 'pipe',
         env: { ...process.env, NODE_ENV: 'production' },
       });
