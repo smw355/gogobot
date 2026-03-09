@@ -335,8 +335,9 @@ The `ToolExecutor` routes server-side tools to `/api/projects/{id}/tools` which 
 
 ## AI Model Configuration
 
-- **Primary**: `gemini-3-pro-preview` with `location: 'global'` and `apiEndpoint: 'aiplatform.googleapis.com'`
-- **Fallback**: `gemini-2.5-pro` with standard `us-central1` location
+- **Primary**: `gemini-3.1-pro-preview` with `location: 'global'` and `apiEndpoint: 'aiplatform.googleapis.com'`
+- **Fallback**: `gemini-3-flash-preview` with `location: 'global'`
+- Rate limit retries: 3 attempts with 5s/15s/30s backoff before falling back
 - Fallback triggers on: 429, 503, 500 errors, or model unavailability
 
 ## GCP Project Lifecycle

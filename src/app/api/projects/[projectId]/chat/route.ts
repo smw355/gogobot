@@ -7,12 +7,12 @@ import { getSystemPrompt } from '@/lib/ai/system-prompt';
 
 export const dynamic = 'force-dynamic';
 
-const PRIMARY_MODEL = 'gemini-3-pro-preview';
-const FALLBACK_MODEL = 'gemini-2.5-pro';
+const PRIMARY_MODEL = 'gemini-3.1-pro-preview';
+const FALLBACK_MODEL = 'gemini-3-flash-preview';
 
-// Gemini 3 Pro requires location "global"; older models use us-central1
+// Both models use location "global"
 const PRIMARY_LOCATION = 'global';
-const FALLBACK_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
+const FALLBACK_LOCATION = 'global';
 
 // Lazy initialization to avoid build-time errors
 let primaryVertexAI: VertexAI | null = null;
@@ -38,7 +38,12 @@ function getModels() {
     });
   }
   if (!fallbackVertexAI) {
-    fallbackVertexAI = new VertexAI({ project: projectId, location: FALLBACK_LOCATION, googleAuthOptions });
+    fallbackVertexAI = new VertexAI({
+      project: projectId,
+      location: FALLBACK_LOCATION,
+      apiEndpoint: 'aiplatform.googleapis.com',
+      googleAuthOptions,
+    });
   }
 
   if (!primaryModel) {
@@ -218,27 +223,32 @@ export async function POST(
           });
 
           const { primaryModel, fallbackModel } = getModels();
-          const models = [
-            { model: primaryModel, name: 'Gemini 3 Pro' },
-            { model: fallbackModel, name: 'Gemini 2.5 Pro' },
-          ];
 
-          let lastError: any = null;
+          // Build the user message to send
+          const userMessage = message && typeof message === 'string' && message.trim()
+            ? message
+            : 'Continue with the next steps based on the tool results.';
+
+          // Try primary model with retries (rate limits are transient), then fall back
+          const MAX_RETRIES = 3;
+          const RETRY_DELAYS = [5000, 15000, 30000]; // 5s, 15s, 30s backoff
           let succeeded = false;
+          let lastError: any = null;
 
-          for (const { model, name } of models) {
+          // --- Attempt primary model with retries ---
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-              console.log(`Trying ${name}...`);
+              if (attempt > 0) {
+                console.log(`Retry ${attempt}/${MAX_RETRIES} for ${PRIMARY_MODEL} after ${RETRY_DELAYS[attempt - 1]}ms...`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]));
+              } else {
+                console.log(`Trying ${PRIMARY_MODEL}...`);
+              }
 
-              const chat = model.startChat({
+              const chat = primaryModel.startChat({
                 history: chatHistory,
                 systemInstruction: systemPrompt,
               });
-
-              // Build the user message to send
-              const userMessage = message && typeof message === 'string' && message.trim()
-                ? message
-                : 'Continue with the next steps based on the tool results.';
 
               const result = await chat.sendMessageStream(userMessage);
 
@@ -247,7 +257,6 @@ export async function POST(
                 if (!candidate?.content?.parts) continue;
 
                 for (const part of candidate.content.parts) {
-                  // Skip thinking/reasoning parts — don't show internal reasoning to users
                   if ((part as any).thought) continue;
 
                   if (part.text) {
@@ -260,7 +269,6 @@ export async function POST(
                   }
 
                   if (part.functionCall) {
-                    // Generate a unique ID for tracking tool calls
                     const toolUseId = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                     controller.enqueue(
                       encoder.encode(
@@ -276,26 +284,70 @@ export async function POST(
                 }
               }
 
-              console.log(`${name} succeeded`);
+              console.log(`${PRIMARY_MODEL} succeeded${attempt > 0 ? ` on retry ${attempt}` : ''}`);
               succeeded = true;
               break;
             } catch (modelError: any) {
               lastError = modelError;
-              console.error(`${name} failed:`, modelError.message);
+              console.error(`${PRIMARY_MODEL} attempt ${attempt} failed:`, modelError.message);
 
-              if (!shouldFallback(modelError)) {
-                throw modelError;
+              if (!isRateLimitError(modelError)) {
+                // Non-rate-limit error — fall back immediately (don't retry 404s, etc.)
+                if (shouldFallback(modelError)) break;
+                throw modelError; // Unknown error — don't fall back
+              }
+              if (attempt === MAX_RETRIES) break; // Exhausted retries
+            }
+          }
+
+          // --- Fallback to secondary model if primary failed ---
+          if (!succeeded) {
+            console.log(`Primary exhausted retries, falling back to ${FALLBACK_MODEL}`);
+            try {
+              const chat = fallbackModel.startChat({
+                history: chatHistory,
+                systemInstruction: systemPrompt,
+              });
+
+              const result = await chat.sendMessageStream(userMessage);
+
+              for await (const chunk of result.stream) {
+                const candidate = chunk.candidates?.[0];
+                if (!candidate?.content?.parts) continue;
+
+                for (const part of candidate.content.parts) {
+                  if ((part as any).thought) continue;
+
+                  if (part.text) {
+                    assistantContent += part.text;
+                    controller.enqueue(
+                      encoder.encode(
+                        `data: ${JSON.stringify({ type: 'chunk', content: part.text })}\n\n`
+                      )
+                    );
+                  }
+
+                  if (part.functionCall) {
+                    const toolUseId = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                    controller.enqueue(
+                      encoder.encode(
+                        `data: ${JSON.stringify({
+                          type: 'tool_call',
+                          toolUseId,
+                          name: part.functionCall.name,
+                          args: part.functionCall.args,
+                        })}\n\n`
+                      )
+                    );
+                  }
+                }
               }
 
-              if (model === primaryModel) {
-                const switchMsg = '*Switching to faster model...*\n\n';
-                assistantContent += switchMsg;
-                controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify({ type: 'chunk', content: switchMsg })}\n\n`
-                  )
-                );
-              }
+              console.log(`${FALLBACK_MODEL} succeeded`);
+              succeeded = true;
+            } catch (fallbackError: any) {
+              lastError = fallbackError;
+              console.error(`${FALLBACK_MODEL} also failed:`, fallbackError.message);
             }
           }
 
