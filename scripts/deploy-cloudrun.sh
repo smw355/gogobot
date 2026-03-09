@@ -114,9 +114,9 @@ ENV_VARS+="||NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_
 ENV_VARS+="||NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}"
 ENV_VARS+="||NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}"
 
-if [[ -n "${NEXT_PUBLIC_BASE_URL:-}" ]]; then
-  ENV_VARS+="||NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}"
-fi
+# Note: NEXT_PUBLIC_BASE_URL is intentionally NOT set at runtime.
+# It's a build-time var baked into the client JS. For production,
+# it should be empty so API calls use relative URLs.
 
 # ---- Deploy to Cloud Run ----
 info "Deploying to Cloud Run..."
