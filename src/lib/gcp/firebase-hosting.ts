@@ -100,6 +100,15 @@ export async function deployToHosting(
               path: '/index.html',
             },
           ],
+          headers: [
+            {
+              glob: '**',
+              headers: {
+                'X-Frame-Options': 'ALLOWALL',
+                'Content-Security-Policy': "frame-ancestors *",
+              },
+            },
+          ],
         },
       }),
     });

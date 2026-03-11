@@ -196,9 +196,9 @@ export function PreviewPane({
     return highlightCode(activeContent, activeFile);
   }, [activeContent, activeFile]);
 
-  // Only use the WebContainer dev server URL for iframe embedding.
-  // Deployment URLs (Firebase Hosting) block iframe embedding via X-Frame-Options.
-  const activeUrl = previewUrl;
+  // Prefer WebContainer dev server URL, fall back to deployed URL for iframe embedding.
+  // Firebase Hosting headers are configured to allow iframe embedding (X-Frame-Options: ALLOWALL).
+  const activeUrl = previewUrl || deploymentUrl || null;
   const isLivePreview = !!previewUrl;
 
   const deviceSize = DEVICE_SIZES[deviceMode];
@@ -336,11 +336,15 @@ export function PreviewPane({
         </div>
       </div>
 
-      {/* Status bar for live preview */}
-      {isLivePreview && view === 'preview' && (
+      {/* Status bar for preview */}
+      {activeUrl && view === 'preview' && (
         <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-900">
-          <Server className="h-3 w-3 text-zinc-400" />
-          <span className="text-zinc-500 dark:text-zinc-400 truncate">{previewUrl}</span>
+          {isLivePreview ? (
+            <Server className="h-3 w-3 text-zinc-400" />
+          ) : (
+            <Globe className="h-3 w-3 text-green-500" />
+          )}
+          <span className="text-zinc-500 dark:text-zinc-400 truncate">{activeUrl}</span>
         </div>
       )}
 
@@ -385,21 +389,6 @@ export function PreviewPane({
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
               />
             )
-          ) : deploymentUrl ? (
-            <div className="flex h-full flex-col items-center justify-center">
-              <Globe className="h-8 w-8 text-green-400 dark:text-green-500 mb-3" />
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Your app is deployed!</p>
-              <p className="text-xs text-zinc-400 mt-1 mb-3">Live preview will appear once the workspace loads</p>
-              <a
-                href={deploymentUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open deployed site
-              </a>
-            </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center">
               <Globe className="h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-3" />
