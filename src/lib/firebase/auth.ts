@@ -27,7 +27,11 @@ export async function signUp(email: string, password: string): Promise<User> {
 // Send password reset email
 export async function sendPasswordResetEmail(email: string): Promise<void> {
   const auth = getAuthInstance();
-  await firebaseSendPasswordResetEmail(auth, email);
+  // Use current origin so the reset link points to our /reset-password page
+  await firebaseSendPasswordResetEmail(auth, email, {
+    url: `${window.location.origin}/login`,
+    handleCodeInApp: false,
+  });
 }
 
 // Sign out
