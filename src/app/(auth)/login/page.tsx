@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signIn, signUp } from '@/lib/firebase/auth';
+import { signIn, signUp, sendPasswordResetEmail } from '@/lib/firebase/auth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
@@ -23,9 +23,11 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   // Invite handling
@@ -79,9 +81,16 @@ function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
     setLoading(true);
 
     try {
+      if (isForgotPassword) {
+        await sendPasswordResetEmail(email);
+        setSuccessMessage('Password reset email sent. Check your inbox.');
+        return;
+      }
+
       const user = isSignUp
         ? await signUp(email, password)
         : await signIn(email, password);
@@ -106,7 +115,7 @@ function LoginForm() {
     } catch (err: any) {
       console.error('Auth error:', err);
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError('Invalid email or password');
+        setError(isForgotPassword ? 'No account found with this email' : 'Invalid email or password');
       } else if (err.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists');
       } else if (err.code === 'auth/weak-password') {
@@ -148,18 +157,22 @@ function LoginForm() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="Gogobot" className="mx-auto mb-4 h-10 dark:invert" />
           <CardTitle className="text-2xl">
-            {inviteValid
-              ? "You're Invited!"
-              : isSignUp
-                ? 'Create Account'
-                : 'Sign in to continue'}
+            {isForgotPassword
+              ? 'Reset Password'
+              : inviteValid
+                ? "You're Invited!"
+                : isSignUp
+                  ? 'Create Account'
+                  : 'Sign in to continue'}
           </CardTitle>
           <CardDescription>
-            {inviteValid
-              ? 'Create your account to get started'
-              : isSignUp
-                ? 'Sign up to start building with AI'
-                : 'Sign in to continue building'}
+            {isForgotPassword
+              ? "Enter your email and we'll send a reset link"
+              : inviteValid
+                ? 'Create your account to get started'
+                : isSignUp
+                  ? 'Sign up to start building with AI'
+                  : 'Sign in to continue building'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -174,28 +187,58 @@ function LoginForm() {
               required
               readOnly={!!inviteValid}
             />
-            <Input
-              id="password"
-              type="password"
-              label="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              minLength={6}
-            />
+            {!isForgotPassword && (
+              <div>
+                <Input
+                  id="password"
+                  type="password"
+                  label="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  minLength={6}
+                />
+                {!isSignUp && (
+                  <div className="mt-1 text-right">
+                    <button
+                      type="button"
+                      onClick={() => { setIsForgotPassword(true); setError(''); setSuccessMessage(''); }}
+                      className="text-xs text-zinc-500 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-100"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {error && (
               <p className="text-sm text-red-500">{error}</p>
             )}
 
+            {successMessage && (
+              <p className="text-sm text-green-600 dark:text-green-400">{successMessage}</p>
+            )}
+
             <Button type="submit" className="w-full" isLoading={loading}>
-              {isSignUp ? 'Create Account' : 'Sign In'}
+              {isForgotPassword ? 'Send Reset Link' : isSignUp ? 'Create Account' : 'Sign In'}
             </Button>
           </form>
 
           <div className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            {isSignUp ? (
+            {isForgotPassword ? (
+              <>
+                Remember your password?{' '}
+                <button
+                  type="button"
+                  onClick={() => { setIsForgotPassword(false); setError(''); setSuccessMessage(''); }}
+                  className="font-medium text-zinc-900 hover:underline dark:text-zinc-100"
+                >
+                  Sign in
+                </button>
+              </>
+            ) : isSignUp ? (
               <>
                 Already have an account?{' '}
                 <button
