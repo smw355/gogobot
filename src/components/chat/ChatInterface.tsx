@@ -188,15 +188,21 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
   // Save files and track what was saved (for dirty checking)
   const saveFiles = useCallback(async (filesToSave: Record<string, string>) => {
     try {
+      if (Object.keys(filesToSave).length === 0) return;
+
+      // Skip if nothing changed since last save
+      const currentSnapshot = JSON.stringify(filesToSave);
+      if (currentSnapshot === lastSavedSnapshotRef.current) return;
+
       const auth = getAuth();
       const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken || Object.keys(filesToSave).length === 0) return;
+      if (!idToken) return;
 
       // Cache token for synchronous save on unload
       authTokenRef.current = idToken;
 
       await apiClientRef.current.saveSnapshot(project.id, filesToSave, idToken);
-      lastSavedSnapshotRef.current = JSON.stringify(filesToSave);
+      lastSavedSnapshotRef.current = currentSnapshot;
       console.log(`Snapshot saved (${Object.keys(filesToSave).length} files)`);
     } catch (err) {
       console.error('Failed to save files:', err);
@@ -279,9 +285,25 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
     };
   }, [project.id]);
 
+  // Track which project we've initialized to avoid redundant re-inits
+  const initializedProjectRef = useRef<string | null>(null);
+
   // Initialize WebContainer after files are loaded
   useEffect(() => {
     if (isLoadingFiles) return;
+
+    // Skip re-init if we already initialized for this project
+    if (initializedProjectRef.current === project.id) {
+      // Dev server may already be running from a previous mount — check for URL
+      const manager = new WebContainerManager();
+      const existingUrl = manager.getPreviewUrl();
+      if (existingUrl) {
+        setPreviewUrl(existingUrl);
+        setContainerManager(manager);
+        setWorkspaceStep('ready');
+      }
+      return;
+    }
 
     const initContainer = async () => {
       try {
@@ -289,6 +311,17 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
         setWorkspaceStep('booting');
 
         const manager = new WebContainerManager();
+
+        // Check if the dev server is already running (e.g. survived a re-mount)
+        const existingUrl = manager.getPreviewUrl();
+        if (existingUrl) {
+          console.log('WebContainer already running, reusing existing dev server');
+          setPreviewUrl(existingUrl);
+          setContainerManager(manager);
+          setWorkspaceStep('ready');
+          initializedProjectRef.current = project.id;
+          return;
+        }
 
         // Ensure essential files always exist (may be missing from old snapshots or new projects)
         const filesToMount = { ...savedFilesRef.current };
@@ -347,6 +380,7 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
 
         setContainerManager(manager);
         setWorkspaceStep('ready');
+        initializedProjectRef.current = project.id;
 
         // Check if the preview URL was already captured during startDevServer()
         const immediateUrl = manager.getPreviewUrl();

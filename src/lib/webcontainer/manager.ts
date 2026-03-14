@@ -523,9 +523,9 @@ export class WebContainerManager {
    * causes a fatal error on the second boot (e.g. React StrictMode re-mount).
    */
   static destroy(): void {
-    // Don't clear instance or bootPromise — WebContainer only boots once per page load
-    // and React StrictMode double-mounts cause a race if we null these out.
-    // Just reset the URL so the next mount re-detects the dev server.
-    WebContainerManager.devServerUrl = null;
+    // Don't clear instance, bootPromise, or devServerUrl — WebContainer only boots
+    // once per page load and the dev server keeps running across re-mounts.
+    // Preserving devServerUrl means the preview iframe can immediately show
+    // the running dev server without waiting for a new server-ready event.
   }
 }
