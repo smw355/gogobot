@@ -150,8 +150,14 @@ export class ToolExecutor {
             throw new Error('Authentication required to deploy');
           }
 
-          // Send source files to the server — it handles building and deploying.
-          const files = getFiles();
+          // Read all files from the WebContainer filesystem for a complete deploy.
+          // Falls back to tracked files if the filesystem read fails.
+          let files: Record<string, string>;
+          try {
+            files = await this.container.getAllSourceFiles();
+          } catch {
+            files = getFiles();
+          }
           if (!files || Object.keys(files).length === 0) {
             throw new Error('No files to deploy. Build something first!');
           }

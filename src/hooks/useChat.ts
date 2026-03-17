@@ -509,7 +509,9 @@ export function useChat(
   }, [projectId]);
 
   // Manual deploy function (for Deploy button)
-  // Sends source files to the server which handles building and deploying.
+  // Reads ALL source files from the WebContainer and sends them to the server
+  // which handles building and deploying. This ensures we deploy the complete
+  // project, not just the subset tracked in React state.
   const deployProject = useCallback(async () => {
     setIsDeploying(true);
     setError(null);
@@ -522,18 +524,33 @@ export function useChat(
         throw new Error('Authentication required. Please sign in.');
       }
 
-      if (!files || Object.keys(files).length === 0) {
+      if (!containerManager) {
+        throw new Error('Workspace not ready. Please wait for it to finish loading.');
+      }
+
+      // Read all files directly from the WebContainer filesystem
+      // This captures everything — not just files tracked via tool calls
+      let allFiles: Record<string, string>;
+      try {
+        allFiles = await containerManager.getAllSourceFiles();
+      } catch {
+        // Fallback to tracked files if WebContainer read fails
+        allFiles = filesRef.current;
+      }
+
+      if (!allFiles || Object.keys(allFiles).length === 0) {
         throw new Error('No files to deploy. Build something first!');
       }
 
+      console.log(`Deploying ${Object.keys(allFiles).length} files:`, Object.keys(allFiles));
+
       // Send source files to the server — it handles building and deploying.
-      // This avoids the WebContainer build timeout issue.
       const response = await fetch(`/api/projects/${projectId}/deploy`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ files }),
+        body: JSON.stringify({ files: allFiles }),
       });
 
       const result = await response.json();
@@ -550,7 +567,7 @@ export function useChat(
     } finally {
       setIsDeploying(false);
     }
-  }, [projectId, files]);
+  }, [projectId, containerManager]);
 
   return {
     messages,

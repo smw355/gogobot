@@ -370,6 +370,44 @@ export class WebContainerManager {
     return this.errorBuffer.slice(-50);
   }
 
+  /**
+   * Read all source files from the WebContainer filesystem.
+   * Skips node_modules, dist, .hidden dirs, and binary files.
+   * Returns a flat map of path → content for deployment.
+   */
+  async getAllSourceFiles(): Promise<Record<string, string>> {
+    const container = WebContainerManager.instance;
+    if (!container) throw new Error('Container not initialized');
+
+    const files: Record<string, string> = {};
+    const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.cache', '.vite']);
+
+    const walk = async (dirPath: string) => {
+      try {
+        const entries = await container.fs.readdir(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+          const fullPath = dirPath === '.' ? entry.name : `${dirPath}/${entry.name}`;
+
+          if (entry.isDirectory()) {
+            await walk(fullPath);
+          } else if (entry.isFile()) {
+            try {
+              files[fullPath] = await container.fs.readFile(fullPath, 'utf-8');
+            } catch {
+              // Skip binary files
+            }
+          }
+        }
+      } catch {
+        // Skip inaccessible directories
+      }
+    };
+
+    await walk('.');
+    return files;
+  }
+
   getPreviewUrl(): string | null {
     return WebContainerManager.devServerUrl;
   }

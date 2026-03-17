@@ -232,6 +232,8 @@ export async function POST(
       );
     }
 
+    console.log(`Deploy received ${Object.keys(files).length} files:`, Object.keys(files));
+
     // Ensure we have an index.html (source or built)
     if (!files['index.html'] && !files['public/index.html']) {
       return NextResponse.json(
