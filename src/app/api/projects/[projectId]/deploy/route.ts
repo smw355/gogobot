@@ -51,9 +51,11 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
         env: { ...process.env, NODE_ENV: 'development' },
       });
     } catch (e: any) {
-      const stderr = e.stderr?.toString()?.slice(-500) || '';
-      const stdout = e.stdout?.toString()?.slice(-500) || '';
-      throw new Error(`npm install failed: ${stderr || stdout}`);
+      const stderr = e.stderr?.toString()?.slice(-2000) || '';
+      const stdout = e.stdout?.toString()?.slice(-2000) || '';
+      const combined = `${stdout}\n${stderr}`.trim();
+      console.error('npm install failed output:', combined);
+      throw new Error(`npm install failed: ${combined.slice(-1500)}`);
     }
 
     try {
@@ -64,9 +66,11 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
         env: { ...process.env, NODE_ENV: 'production' },
       });
     } catch (e: any) {
-      const stderr = e.stderr?.toString()?.slice(-500) || '';
-      const stdout = e.stdout?.toString()?.slice(-500) || '';
-      throw new Error(`Build failed: ${stderr || stdout}`);
+      const stderr = e.stderr?.toString()?.slice(-2000) || '';
+      const stdout = e.stdout?.toString()?.slice(-2000) || '';
+      const combined = `${stdout}\n${stderr}`.trim();
+      console.error('Build failed output:', combined);
+      throw new Error(`Build failed: ${combined.slice(-1500)}`);
     }
 
     // Read built files from dist/
