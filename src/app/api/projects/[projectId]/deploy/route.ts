@@ -43,11 +43,10 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
     // Install dependencies and build
     console.log(`Building in ${tempDir}...`);
     try {
-      execSync('npm install --force', {
+      execSync('npm install --include=dev --force', {
         cwd: tempDir,
         timeout: 120_000,
         stdio: 'pipe',
-        // Don't set NODE_ENV=production here — devDependencies like vite are needed for the build
         env: { ...process.env, NODE_ENV: 'development' },
       });
     } catch (e: any) {
