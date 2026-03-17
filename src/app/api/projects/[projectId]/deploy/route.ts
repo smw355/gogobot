@@ -43,11 +43,15 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
     // Install dependencies and build
     console.log(`Building in ${tempDir}...`);
     try {
-      execSync('npm install --include=dev --force', {
+      // Remove NODE_ENV entirely so npm installs ALL dependencies (including devDeps).
+      // Cloud Run sets NODE_ENV=production which causes npm to omit devDependencies
+      // even with --include=dev in some npm versions.
+      const { NODE_ENV: _nodeEnv, ...installEnv } = process.env;
+      execSync('npm install --force', {
         cwd: tempDir,
         timeout: 120_000,
         stdio: 'pipe',
-        env: { ...process.env, NODE_ENV: 'development' },
+        env: installEnv as NodeJS.ProcessEnv,
       });
     } catch (e: any) {
       const stderr = e.stderr?.toString()?.slice(-2000) || '';
