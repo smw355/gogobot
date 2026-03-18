@@ -356,6 +356,7 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
           filesToMount['src/main.jsx'] = `import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -372,6 +373,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </div>
   )
 }`;
+        }
+        if (!filesToMount['src/index.css']) {
+          filesToMount['src/index.css'] = `* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; }`;
         }
         if (!filesToMount['vite.config.js']) {
           filesToMount['vite.config.js'] = `import { defineConfig } from 'vite'

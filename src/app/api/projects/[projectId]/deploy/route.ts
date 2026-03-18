@@ -35,12 +35,31 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
     const hasMain = !!sourceFiles['src/main.jsx'] || !!sourceFiles['src/main.tsx'] || !!sourceFiles['src/index.jsx'] || !!sourceFiles['src/index.tsx'];
     if (hasApp && !hasMain) {
       const ext = sourceFiles['src/App.tsx'] ? 'tsx' : 'jsx';
-      const mainContent = `import React from 'react'\nimport ReactDOM from 'react-dom/client'\nimport App from './App'\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n)`;
+      // Detect CSS files to import
+      const cssImports: string[] = [];
+      if (sourceFiles['src/index.css']) cssImports.push("import './index.css'");
+      if (sourceFiles['src/App.css']) cssImports.push("import './App.css'");
+      if (sourceFiles['src/styles.css']) cssImports.push("import './styles.css'");
+      if (sourceFiles['src/global.css']) cssImports.push("import './global.css'");
+
+      const mainContent = [
+        "import React from 'react'",
+        "import ReactDOM from 'react-dom/client'",
+        "import App from './App'",
+        ...cssImports,
+        "",
+        "ReactDOM.createRoot(document.getElementById('root')).render(",
+        "  <React.StrictMode>",
+        "    <App />",
+        "  </React.StrictMode>",
+        ")",
+      ].join('\n');
+
       const mainPath = `src/main.${ext}`;
       sourceFiles[mainPath] = mainContent;
       await execMkdir(join(tempDir, 'src'));
       await writeFile(join(tempDir, mainPath), mainContent, 'utf-8');
-      console.log(`Auto-created ${mainPath} (App found but no entry point)`);
+      console.log(`Auto-created ${mainPath} with CSS imports: [${cssImports.join(', ')}]`);
     }
 
     // Ensure index.html has a module script entry point
