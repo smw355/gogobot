@@ -8,6 +8,10 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { execSync } from 'child_process';
 
+// Next.js App Router: increase limits for deploy route
+export const maxDuration = 120;
+export const dynamic = 'force-dynamic';
+
 /**
  * Build source files server-side using real Node.js.
  * WebContainer's wasm runtime can't handle Vite builds reliably,
@@ -259,10 +263,20 @@ export async function POST(
     }
 
     // Get files from request body or from latest snapshot
-    const body = await request.json().catch(() => ({}));
-    let files = body.files;
+    let files: Record<string, string> | undefined;
+    try {
+      const body = await request.json();
+      files = body.files;
+      if (files && Object.keys(files).length > 0) {
+        console.log(`Deploy: received ${Object.keys(files).length} files from client`);
+      }
+    } catch (parseErr) {
+      console.error('Deploy: failed to parse request body:', parseErr);
+      // Body parse failed — fall through to snapshot
+    }
 
     if (!files || Object.keys(files).length === 0) {
+      console.log('Deploy: no files in request body, falling back to snapshot');
       const snapshotsRef = projectRef.collection('snapshots');
       const latestSnapshot = await snapshotsRef
         .orderBy('createdAt', 'desc')
@@ -271,6 +285,7 @@ export async function POST(
 
       if (!latestSnapshot.empty) {
         files = latestSnapshot.docs[0].data().files || {};
+        console.log(`Deploy: loaded ${Object.keys(files!).length} files from snapshot:`, Object.keys(files!));
       }
     }
 

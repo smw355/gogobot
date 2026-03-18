@@ -533,16 +533,23 @@ export function useChat(
       let allFiles: Record<string, string>;
       try {
         allFiles = await containerManager.getAllSourceFiles();
-      } catch {
-        // Fallback to tracked files if WebContainer read fails
+        console.log(`[Deploy] Read ${Object.keys(allFiles).length} files from WebContainer:`, Object.keys(allFiles));
+      } catch (wcErr) {
+        console.warn('[Deploy] getAllSourceFiles() failed, falling back to tracked files:', wcErr);
         allFiles = filesRef.current;
+        console.log(`[Deploy] Fallback: ${Object.keys(allFiles).length} tracked files:`, Object.keys(allFiles));
       }
 
       if (!allFiles || Object.keys(allFiles).length === 0) {
         throw new Error('No files to deploy. Build something first!');
       }
 
-      console.log(`Deploying ${Object.keys(allFiles).length} files:`, Object.keys(allFiles));
+      // Warn if we're about to deploy only default files
+      const hasOnlyDefaults = Object.keys(allFiles).length <= 2 &&
+        allFiles['index.html']?.includes('Welcome to Gogobot');
+      if (hasOnlyDefaults) {
+        throw new Error('Project only has default files. Chat with the AI to build something first!');
+      }
 
       // Send source files to the server — it handles building and deploying.
       const response = await fetch(`/api/projects/${projectId}/deploy`, {
