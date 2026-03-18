@@ -5,15 +5,25 @@ import { createGcpProject, enableApi, getGcpProjectStatus, configureStorageCors 
 import { GoogleAuth } from 'google-auth-library';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // 5 minutes — GCP operations can be slow
 
 // ─── GCP Request Security ──────────────────────────────────────────────────
 
 /** Patterns that are never allowed in gcpRequest URLs */
 const BLOCKED_URL_PATTERNS = [
   /setIamPolicy/i,
+  /getIamPolicy/i,
   /\/organizations\//i,
   /\/billingAccounts\//i,
   /\/folders\//i,
+  /\/serviceAccounts/i,
+  /getAccessToken/i,
+  /signBlob/i,
+  /signJwt/i,
+  /generateAccessToken/i,
+  /generateIdToken/i,
+  /iamPolicies/i,
+  /iamcredentials\.googleapis\.com/i,
 ];
 
 /**

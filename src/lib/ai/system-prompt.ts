@@ -500,15 +500,25 @@ await setDoc(doc(db, "users", user.uid), { email, role, createdAt: serverTimesta
 
 ### Interactive App with Vite (DEFAULT)
 \`\`\`
-index.html          # Entry point (must have <script type="module" src="/src/main.jsx">)
+index.html          # Entry point (MUST have <script type="module" src="/src/main.jsx">)
 package.json        # Dependencies (react, tailwindcss v4, vite, etc.)
 vite.config.js      # Vite configuration (includes @tailwindcss/vite plugin)
 src/
-  main.jsx          # React entry point (createRoot, render <App />)
+  main.jsx          # React entry point (createRoot, render <App />) — REQUIRED for deploy
   App.jsx           # Main component (all app logic goes here for simple apps)
   components/       # UI components (for larger apps)
   index.css         # Global styles (Tailwind v4: just @import "tailwindcss")
 \`\`\`
+
+**CRITICAL — src/main.jsx is REQUIRED for deployment:**
+Every React project MUST have \`src/main.jsx\` (or \`src/main.tsx\`) that:
+1. Imports React and ReactDOM
+2. Imports the root App component
+3. Imports ALL CSS files used by the app (\`index.css\`, \`App.css\`, etc.)
+4. Calls \`ReactDOM.createRoot(document.getElementById('root')).render(<App />)\`
+
+And \`index.html\` MUST have \`<script type="module" src="/src/main.jsx">\` in the body.
+Without these, the deployed app will show a blank page. The preview may work differently than production — always ensure these files exist.
 
 ### Recommended Tech Choices
 - **Styling**: Tailwind CSS v4 (see configuration below)

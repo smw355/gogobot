@@ -24,6 +24,14 @@ ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 ARG NEXT_PUBLIC_FIREBASE_APP_ID
 ARG NEXT_PUBLIC_BASE_URL=""
 
+# Validate required build args — fail fast with clear error message
+RUN if [ -z "${NEXT_PUBLIC_FIREBASE_API_KEY}" ]; then \
+      echo "ERROR: NEXT_PUBLIC_FIREBASE_API_KEY build arg is required. Pass it with --build-arg." && exit 1; \
+    fi && \
+    if [ -z "${NEXT_PUBLIC_FIREBASE_PROJECT_ID}" ]; then \
+      echo "ERROR: NEXT_PUBLIC_FIREBASE_PROJECT_ID build arg is required. Pass it with --build-arg." && exit 1; \
+    fi
+
 RUN npm run build
 
 # ---- Stage 3: Production runner ----

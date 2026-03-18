@@ -83,7 +83,7 @@ async function ensureBucket(token: string): Promise<void> {
       },
       body: JSON.stringify({
         name: bucket,
-        location: 'US',
+        location: process.env.GCP_STORAGE_LOCATION || 'US',
         iamConfiguration: { uniformBucketLevelAccess: { enabled: true } },
       }),
     }

@@ -55,12 +55,17 @@ export function useChat(
   const abortControllerRef = useRef<AbortController | null>(null);
   const shouldStopRef = useRef(false);
   const filesRef = useRef<Record<string, string>>(initialFiles);
+  const messagesRef = useRef<Message[]>([]);
   const savedMessageIdsRef = useRef<Set<string>>(new Set());
 
-  // Keep filesRef in sync with files state
+  // Keep refs in sync with state
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Load messages from Firestore on mount
   useEffect(() => {
@@ -219,9 +224,9 @@ export function useChat(
           throw new Error('Authentication required. Please sign in.');
         }
 
-        // Build chat history for Gemini
+        // Build chat history for Gemini (use ref to avoid stale closure)
         let chatHistory: any[] = [];
-        for (const msg of messages) {
+        for (const msg of messagesRef.current) {
           if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
             // Assistant message with tool calls
             chatHistory.push({
@@ -474,7 +479,7 @@ export function useChat(
         setIsLoading(false);
       }
     },
-    [messages, isLoading, projectId, containerManager, saveMessage, markFileChanged]
+    [isLoading, projectId, containerManager, saveMessage, markFileChanged]
   );
 
   const stopGeneration = useCallback(() => {

@@ -9,7 +9,7 @@ import { tmpdir } from 'os';
 import { execSync } from 'child_process';
 
 // Next.js App Router: increase limits for deploy route
-export const maxDuration = 120;
+export const maxDuration = 300; // 5 minutes — npm install + build + upload
 export const dynamic = 'force-dynamic';
 
 /**
@@ -165,7 +165,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
       const { NODE_ENV: _nodeEnv, ...installEnv } = process.env;
       execSync('npm install --force', {
         cwd: tempDir,
-        timeout: 120_000,
+        timeout: 300_000,
         stdio: 'pipe',
         env: installEnv as NodeJS.ProcessEnv,
       });
@@ -180,7 +180,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
     try {
       execSync('npm run build', {
         cwd: tempDir,
-        timeout: 120_000,
+        timeout: 300_000,
         stdio: 'pipe',
         env: { ...process.env, NODE_ENV: 'production' },
       });
@@ -205,7 +205,9 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
     return builtFiles;
   } finally {
     // Clean up temp directory
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    await rm(tempDir, { recursive: true, force: true }).catch((cleanupErr) => {
+      console.warn(`Failed to clean up temp directory ${tempDir}:`, cleanupErr.message);
+    });
   }
 }
 
@@ -332,16 +334,26 @@ export async function POST(
       );
     }
 
+    // Prevent concurrent deploys
+    if (project.status === 'deploying') {
+      return NextResponse.json(
+        { error: 'A deployment is already in progress. Please wait for it to finish.' },
+        { status: 409 }
+      );
+    }
+
     // Get files from request body or from latest snapshot
     let files: Record<string, string> | undefined;
     try {
+      const contentLength = request.headers.get('content-length');
+      console.log(`Deploy: content-length=${contentLength || 'unknown'}`);
       const body = await request.json();
       files = body.files;
       if (files && Object.keys(files).length > 0) {
         console.log(`Deploy: received ${Object.keys(files).length} files from client`);
       }
-    } catch (parseErr) {
-      console.error('Deploy: failed to parse request body:', parseErr);
+    } catch (parseErr: any) {
+      console.error('Deploy: failed to parse request body:', parseErr.message || parseErr);
       // Body parse failed — fall through to snapshot
     }
 
@@ -377,10 +389,14 @@ export async function POST(
     }
 
     // Update project status
-    await projectRef.update({
-      status: 'deploying',
-      updatedAt: new Date(),
-    });
+    try {
+      await projectRef.update({
+        status: 'deploying',
+        updatedAt: new Date(),
+      });
+    } catch (statusErr: any) {
+      console.warn('Failed to set deploying status:', statusErr.message);
+    }
 
     try {
       // Build on the server if the project has JSX/TS that needs compilation
@@ -406,22 +422,26 @@ export async function POST(
       if (deployResult.success) {
         const deployUrl = deployResult.url || project.gcpProject.hostingUrl;
 
-        await projectRef.update({
-          status: 'deployed',
-          deployment: {
-            url: deployUrl,
-            deployedAt: new Date(),
-          },
-          updatedAt: new Date(),
-        });
+        try {
+          await projectRef.update({
+            status: 'deployed',
+            deployment: {
+              url: deployUrl,
+              deployedAt: new Date(),
+            },
+            updatedAt: new Date(),
+          });
 
-        // Save deployment history
-        await projectRef.collection('deployments').add({
-          url: deployUrl,
-          versionId: deployResult.versionId,
-          deployedAt: new Date(),
-          deployedBy: user.uid,
-        });
+          // Save deployment history
+          await projectRef.collection('deployments').add({
+            url: deployUrl,
+            versionId: deployResult.versionId,
+            deployedAt: new Date(),
+            deployedBy: user.uid,
+          });
+        } catch (dbErr: any) {
+          console.warn('Failed to update deploy status in Firestore:', dbErr.message);
+        }
 
         return NextResponse.json({
           success: true,
@@ -429,10 +449,14 @@ export async function POST(
           message: `Deployed to ${deployUrl}`,
         });
       } else {
-        await projectRef.update({
-          status: 'error',
-          updatedAt: new Date(),
-        });
+        try {
+          await projectRef.update({
+            status: 'error',
+            updatedAt: new Date(),
+          });
+        } catch (dbErr: any) {
+          console.warn('Failed to update error status in Firestore:', dbErr.message);
+        }
 
         return NextResponse.json(
           { error: deployResult.error || 'Deployment failed' },
@@ -440,10 +464,14 @@ export async function POST(
         );
       }
     } catch (deployError: any) {
-      await projectRef.update({
-        status: 'error',
-        updatedAt: new Date(),
-      });
+      try {
+        await projectRef.update({
+          status: 'error',
+          updatedAt: new Date(),
+        });
+      } catch (dbErr: any) {
+        console.warn('Failed to update error status in Firestore:', dbErr.message);
+      }
 
       throw deployError;
     }

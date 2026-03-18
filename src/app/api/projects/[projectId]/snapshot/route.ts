@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/verify-session';
 
+export const maxDuration = 60;
+
 // GET /api/projects/[projectId]/snapshot - Get the latest snapshot
 export async function GET(
   request: NextRequest,

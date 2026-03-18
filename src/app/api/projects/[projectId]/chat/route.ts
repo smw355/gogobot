@@ -6,13 +6,14 @@ import { toolDeclarations } from '@/lib/ai/tools';
 import { getSystemPrompt } from '@/lib/ai/system-prompt';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 600; // 10 minutes — long Gemini inference + retries
 
-const PRIMARY_MODEL = 'gemini-3.1-pro-preview';
-const FALLBACK_MODEL = 'gemini-3-flash-preview';
+const PRIMARY_MODEL = process.env.AI_PRIMARY_MODEL || 'gemini-3.1-pro-preview';
+const FALLBACK_MODEL = process.env.AI_FALLBACK_MODEL || 'gemini-3-flash-preview';
 
 // Both models use location "global"
-const PRIMARY_LOCATION = 'global';
-const FALLBACK_LOCATION = 'global';
+const PRIMARY_LOCATION = process.env.AI_PRIMARY_LOCATION || 'global';
+const FALLBACK_LOCATION = process.env.AI_FALLBACK_LOCATION || 'global';
 
 // Lazy initialization to avoid build-time errors
 let primaryVertexAI: VertexAI | null = null;

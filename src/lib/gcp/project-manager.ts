@@ -641,7 +641,7 @@ async function createFirestoreDatabase(projectId: string): Promise<void> {
       method: 'POST',
       body: JSON.stringify({
         type: 'FIRESTORE_NATIVE',
-        locationId: 'nam5',
+        locationId: process.env.GCP_FIRESTORE_LOCATION || 'nam5',
       }),
     }
   );

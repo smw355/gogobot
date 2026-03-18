@@ -155,22 +155,45 @@ export async function deployToHosting(
     // Step 4: Upload any files that Firebase doesn't already have (gzipped)
     if (uploadRequiredHashes.length > 0 && uploadUrl) {
       console.log(`Uploading ${uploadRequiredHashes.length} new files...`);
+      const failedUploads: string[] = [];
+
       for (const hash of uploadRequiredHashes) {
         const gzipped = hashToGzipped[hash];
         if (!gzipped) continue;
 
-        const uploadRes = await fetch(`${uploadUrl}/${hash}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${await getAccessToken()}`,
-            'Content-Type': 'application/octet-stream',
-          },
-          body: new Uint8Array(gzipped),
-        });
+        let uploaded = false;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const uploadRes = await fetch(`${uploadUrl}/${hash}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${await getAccessToken()}`,
+                'Content-Type': 'application/octet-stream',
+              },
+              body: new Uint8Array(gzipped),
+            });
 
-        if (!uploadRes.ok) {
-          console.error(`Failed to upload file with hash ${hash}: ${uploadRes.statusText}`);
+            if (uploadRes.ok) {
+              uploaded = true;
+              break;
+            }
+
+            console.warn(`Upload attempt ${attempt + 1} failed for hash ${hash}: ${uploadRes.statusText}`);
+            if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          } catch (uploadErr: any) {
+            console.warn(`Upload attempt ${attempt + 1} error for hash ${hash}:`, uploadErr.message);
+            if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          }
         }
+
+        if (!uploaded) {
+          failedUploads.push(hash);
+        }
+      }
+
+      if (failedUploads.length > 0) {
+        console.error(`Failed to upload ${failedUploads.length} file(s) after retries`);
+        throw new Error(`Failed to upload ${failedUploads.length} file(s) to Firebase Hosting. Deployment may be incomplete.`);
       }
     }
 

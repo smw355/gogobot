@@ -59,9 +59,8 @@ export async function PATCH(
     expiresAt,
   });
 
-  // Derive base URL from the request origin (NEXT_PUBLIC_BASE_URL may be empty in production)
-  const origin = request.headers.get('origin') || request.headers.get('referer')?.replace(/\/+$/, '') || process.env.NEXT_PUBLIC_BASE_URL || '';
-  const baseUrl = origin.replace(/\/$/, '');
+  // Always use NEXT_PUBLIC_BASE_URL for invite links (never trust Origin header)
+  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || '').replace(/\/$/, '');
   const inviteUrl = `${baseUrl}/login?invite=${data.token}`;
 
   return NextResponse.json({ success: true, inviteUrl });
