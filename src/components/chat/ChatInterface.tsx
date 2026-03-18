@@ -330,8 +330,8 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
             {
               name: 'project',
               type: 'module',
-              dependencies: {},
-              devDependencies: { vite: '^5.0.0' },
+              dependencies: { react: '^18.2.0', 'react-dom': '^18.2.0' },
+              devDependencies: { vite: '^5.0.0', '@vitejs/plugin-react': '^4.0.0' },
               scripts: { dev: 'vite', build: 'vite build' },
             },
             null,
@@ -347,12 +347,39 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
     <title>Gogobot Project</title>
   </head>
   <body>
-    <div id="root">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>`;
+        }
+        if (!filesToMount['src/main.jsx']) {
+          filesToMount['src/main.jsx'] = `import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+)`;
+        }
+        if (!filesToMount['src/App.jsx']) {
+          filesToMount['src/App.jsx'] = `export default function App() {
+  return (
+    <div style={{ fontFamily: 'system-ui', maxWidth: 600, margin: '4rem auto', textAlign: 'center' }}>
       <h1>Welcome to Gogobot!</h1>
       <p>Start chatting to build your app.</p>
     </div>
-  </body>
-</html>`;
+  )
+}`;
+        }
+        if (!filesToMount['vite.config.js']) {
+          filesToMount['vite.config.js'] = `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+})`;
         }
 
         const initialFiles = filesToFileSystemTree(filesToMount);

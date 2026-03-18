@@ -29,6 +29,57 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
       await writeFile(fullPath, content, 'utf-8');
     }
 
+    // Auto-fix missing React entry point: if src/App.jsx exists but no src/main.jsx,
+    // create one and ensure index.html has the script tag
+    const hasApp = !!sourceFiles['src/App.jsx'] || !!sourceFiles['src/App.tsx'];
+    const hasMain = !!sourceFiles['src/main.jsx'] || !!sourceFiles['src/main.tsx'] || !!sourceFiles['src/index.jsx'] || !!sourceFiles['src/index.tsx'];
+    if (hasApp && !hasMain) {
+      const ext = sourceFiles['src/App.tsx'] ? 'tsx' : 'jsx';
+      const mainContent = `import React from 'react'\nimport ReactDOM from 'react-dom/client'\nimport App from './App'\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n)`;
+      const mainPath = `src/main.${ext}`;
+      sourceFiles[mainPath] = mainContent;
+      await execMkdir(join(tempDir, 'src'));
+      await writeFile(join(tempDir, mainPath), mainContent, 'utf-8');
+      console.log(`Auto-created ${mainPath} (App found but no entry point)`);
+    }
+
+    // Ensure index.html has a module script entry point
+    if (sourceFiles['index.html'] && !sourceFiles['index.html'].includes('<script type="module"')) {
+      const entryFile = sourceFiles['src/main.tsx'] ? '/src/main.tsx' :
+        sourceFiles['src/main.jsx'] ? '/src/main.jsx' :
+        sourceFiles['src/index.tsx'] ? '/src/index.tsx' :
+        sourceFiles['src/index.jsx'] ? '/src/index.jsx' : null;
+      if (entryFile) {
+        sourceFiles['index.html'] = sourceFiles['index.html'].replace(
+          '</body>',
+          `    <script type="module" src="${entryFile}"></script>\n  </body>`
+        );
+        await writeFile(join(tempDir, 'index.html'), sourceFiles['index.html'], 'utf-8');
+        console.log(`Auto-added <script type="module" src="${entryFile}"> to index.html`);
+      }
+    }
+
+    // Also ensure react/react-dom are in dependencies if JSX files exist
+    const hasJsx = Object.keys(sourceFiles).some(f => /\.(jsx|tsx)$/.test(f));
+    if (hasJsx) {
+      try {
+        const pkgRaw = await readFile(join(tempDir, 'package.json'), 'utf-8');
+        const pkg = JSON.parse(pkgRaw);
+        const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+        let changed = false;
+        if (!allDeps['react']) {
+          pkg.dependencies = pkg.dependencies || {};
+          pkg.dependencies['react'] = '^18.2.0';
+          pkg.dependencies['react-dom'] = '^18.2.0';
+          changed = true;
+        }
+        if (changed) {
+          await writeFile(join(tempDir, 'package.json'), JSON.stringify(pkg, null, 2), 'utf-8');
+          console.log('Auto-added react/react-dom to dependencies');
+        }
+      } catch { /* no package.json */ }
+    }
+
     // Check if there's a build script and ensure vite deps are present
     const pkgPath = join(tempDir, 'package.json');
     let hasBuildScript = false;
