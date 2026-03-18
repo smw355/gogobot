@@ -14,7 +14,14 @@ export class WebContainerManager {
   private static get serverReadyListenerAttached(): boolean { return _g.__wcListenerAttached ?? false; }
   private static set serverReadyListenerAttached(v: boolean) { _g.__wcListenerAttached = v; }
   private static get devServerUrl(): string | null { return _g.__wcDevServerUrl ?? null; }
-  private static set devServerUrl(v: string | null) { _g.__wcDevServerUrl = v; }
+  private static set devServerUrl(v: string | null) {
+    _g.__wcDevServerUrl = v;
+    // Notify all subscribers when URL changes
+    const listeners = (_g.__wcUrlListeners ?? []) as Array<(url: string | null) => void>;
+    for (const fn of listeners) {
+      try { fn(v); } catch {}
+    }
+  }
   private static get devServerProcess(): { kill: () => void } | null { return _g.__wcDevServerProcess ?? null; }
   private static set devServerProcess(v: { kill: () => void } | null) { _g.__wcDevServerProcess = v; }
   private consoleBuffer: string[] = [];
@@ -410,6 +417,26 @@ export class WebContainerManager {
 
   getPreviewUrl(): string | null {
     return WebContainerManager.devServerUrl;
+  }
+
+  /**
+   * Subscribe to dev server URL changes. Returns an unsubscribe function.
+   * Fires immediately with the current URL if one exists.
+   */
+  onPreviewUrlChange(callback: (url: string | null) => void): () => void {
+    if (!_g.__wcUrlListeners) _g.__wcUrlListeners = [];
+    _g.__wcUrlListeners.push(callback);
+
+    // Fire immediately with current value
+    const current = WebContainerManager.devServerUrl;
+    if (current) {
+      try { callback(current); } catch {}
+    }
+
+    return () => {
+      const idx = (_g.__wcUrlListeners as Array<(url: string | null) => void>).indexOf(callback);
+      if (idx >= 0) _g.__wcUrlListeners.splice(idx, 1);
+    };
   }
 
   /**

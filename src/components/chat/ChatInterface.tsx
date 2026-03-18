@@ -288,13 +288,23 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
   // Track which project we've initialized to avoid redundant re-inits
   const initializedProjectRef = useRef<string | null>(null);
 
+  // Subscribe to dev server URL changes reactively
+  // This handles initial URL discovery, post-build restarts, and re-mounts
+  useEffect(() => {
+    const manager = new WebContainerManager();
+    const unsubscribe = manager.onPreviewUrlChange((url) => {
+      setPreviewUrl(url);
+    });
+    return unsubscribe;
+  }, []);
+
   // Initialize WebContainer after files are loaded
   useEffect(() => {
     if (isLoadingFiles) return;
 
     // Skip re-init if we already initialized for this project
     if (initializedProjectRef.current === project.id) {
-      // Dev server may already be running from a previous mount — check for URL
+      // Dev server may already be running from a previous mount — reuse it
       const manager = new WebContainerManager();
       const existingUrl = manager.getPreviewUrl();
       if (existingUrl) {
@@ -302,6 +312,7 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
         setContainerManager(manager);
         setWorkspaceStep('ready');
       }
+      // If URL isn't ready yet, the onPreviewUrlChange subscription above will catch it
       return;
     }
 
@@ -414,21 +425,11 @@ export default defineConfig({
         setWorkspaceStep('ready');
         initializedProjectRef.current = project.id;
 
-        // Check if the preview URL was already captured during startDevServer()
+        // The preview URL will be picked up automatically by the onPreviewUrlChange subscription.
+        // Check immediately in case it's already available.
         const immediateUrl = manager.getPreviewUrl();
         if (immediateUrl) {
           setPreviewUrl(immediateUrl);
-        } else {
-          // Poll for it — the server-ready event may fire shortly after
-          const checkPreview = setInterval(() => {
-            const url = manager.getPreviewUrl();
-            if (url) {
-              setPreviewUrl(url);
-              clearInterval(checkPreview);
-            }
-          }, 500);
-
-          setTimeout(() => clearInterval(checkPreview), 30000);
         }
 
         console.log('WebContainer ready!');
