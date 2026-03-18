@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // All routes: security headers + WebContainer COEP/COOP
         source: '/(.*)',
         headers: [
           {
@@ -44,6 +45,12 @@ const nextConfig: NextConfig = {
           {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
+          },
+          {
+            // Prevent CDN/proxy from caching HTML pages with baked-in env vars.
+            // JS chunks use content-hashed filenames so they're safe to cache.
+            key: 'Cache-Control',
+            value: 'no-cache, no-store, must-revalidate',
           },
         ],
       },
