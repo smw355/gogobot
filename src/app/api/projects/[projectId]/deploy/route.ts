@@ -25,12 +25,54 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
       await writeFile(fullPath, content, 'utf-8');
     }
 
-    // Check if there's a build script
+    // Check if there's a build script and ensure vite deps are present
     const pkgPath = join(tempDir, 'package.json');
     let hasBuildScript = false;
     try {
       const pkg = JSON.parse(await readFile(pkgPath, 'utf-8'));
       hasBuildScript = !!pkg.scripts?.build;
+
+      // Auto-detect missing vite dependencies from config files
+      // The AI often creates vite.config.js that imports plugins not in package.json
+      if (hasBuildScript) {
+        const allDeps = {
+          ...(pkg.dependencies || {}),
+          ...(pkg.devDependencies || {}),
+        };
+        let depsAdded = false;
+
+        // Check vite.config for plugin imports
+        const viteConfigPath = sourceFiles['vite.config.js'] || sourceFiles['vite.config.ts'];
+        if (viteConfigPath) {
+          if (viteConfigPath.includes('@vitejs/plugin-react') && !allDeps['@vitejs/plugin-react']) {
+            pkg.devDependencies = pkg.devDependencies || {};
+            pkg.devDependencies['@vitejs/plugin-react'] = '^4.0.0';
+            depsAdded = true;
+          }
+          if (viteConfigPath.includes('@vitejs/plugin-vue') && !allDeps['@vitejs/plugin-vue']) {
+            pkg.devDependencies = pkg.devDependencies || {};
+            pkg.devDependencies['@vitejs/plugin-vue'] = '^5.0.0';
+            depsAdded = true;
+          }
+        }
+
+        // Ensure vite itself is present
+        if (!allDeps['vite']) {
+          pkg.devDependencies = pkg.devDependencies || {};
+          pkg.devDependencies['vite'] = '^5.0.0';
+          depsAdded = true;
+        }
+
+        if (depsAdded) {
+          console.log('Auto-added missing vite dependencies to package.json');
+          await writeFile(pkgPath, JSON.stringify(pkg, null, 2), 'utf-8');
+        }
+      }
+
+      console.log('package.json deps:', JSON.stringify({
+        deps: Object.keys(pkg.dependencies || {}),
+        devDeps: Object.keys(pkg.devDependencies || {}),
+      }));
     } catch {
       // No package.json — just deploy source files as-is
     }
