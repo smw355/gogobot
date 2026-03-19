@@ -51,16 +51,22 @@ interface DashboardData {
 
 interface CostsData {
   billingAccountId: string;
-  totalBillingProjects: number;
+  billingProjectCount: number;
   gogobotLinked: number;
-  unlinked: number;
-  perUser: Array<{
-    userId: string;
-    email: string;
-    projectCount: number;
-    billingEnabled: number;
-  }>;
-  note: string;
+  range: string;
+  bqStatus: 'ok' | 'no_table' | 'no_data' | 'error';
+  costData: {
+    totalCost: number;
+    dateRange: { start: string; end: string };
+    perProject: Array<{
+      gcpProjectId: string;
+      gogobotName: string | null;
+      userEmail: string | null;
+      totalCost: number;
+      services: Array<{ service: string; cost: number }>;
+    }>;
+  } | null;
+  setupGuide?: string;
 }
 
 export default function AdminDashboardPage() {
@@ -70,7 +76,9 @@ export default function AdminDashboardPage() {
   const [costsError, setCostsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const [expandedCostProject, setExpandedCostProject] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [costRange, setCostRange] = useState<'7d' | '30d' | '90d'>('30d');
 
   useEffect(() => {
     if (user?.role !== 'admin') return;
@@ -78,7 +86,7 @@ export default function AdminDashboardPage() {
     async function fetchData() {
       const [dashRes, costsRes] = await Promise.all([
         fetch('/api/admin/dashboard').then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch('/api/admin/costs').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`/api/admin/costs?range=${costRange}`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
 
       if (dashRes) setDashboard(dashRes);
@@ -87,13 +95,14 @@ export default function AdminDashboardPage() {
           setCostsError(costsRes.error);
         } else {
           setCosts(costsRes);
+          setCostsError(null);
         }
       }
       setLoading(false);
     }
 
     fetchData();
-  }, [user]);
+  }, [user, costRange]);
 
   const formatDate = (date: string | null) => {
     if (!date) return 'Never';
@@ -325,13 +334,34 @@ export default function AdminDashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Billing section */}
+      {/* Costs & Billing section */}
       <Card>
         <CardHeader>
-          <CardTitle>Billing & Resources</CardTitle>
-          <CardDescription>
-            Projects linked to billing account
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Costs & Billing</CardTitle>
+              <CardDescription>
+                {costs?.costData
+                  ? `${costs.costData.dateRange.start} to ${costs.costData.dateRange.end}`
+                  : 'Per-project spend breakdown'}
+              </CardDescription>
+            </div>
+            <div className="flex gap-1">
+              {(['7d', '30d', '90d'] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setCostRange(r)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                    costRange === r
+                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {costsError ? (
@@ -345,36 +375,78 @@ export default function AdminDashboardPage() {
             </div>
           ) : costs ? (
             <div className="space-y-4">
+              {/* Summary row */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Total Spend</p>
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                    {costs.costData ? `$${costs.costData.totalCost.toFixed(2)}` : '-'}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">Billing Projects</p>
-                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{costs.totalBillingProjects}</p>
+                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{costs.billingProjectCount}</p>
                 </div>
                 <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">Gogobot-Linked</p>
                   <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{costs.gogobotLinked}</p>
                 </div>
-                <div className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Unlinked</p>
-                  <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{costs.unlinked}</p>
-                </div>
               </div>
 
-              {costs.perUser.length > 0 && (
+              {/* Cost breakdown by project */}
+              {costs.costData && costs.costData.perProject.length > 0 ? (
                 <div>
-                  <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Per-User Billing Projects</h3>
+                  <h3 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Per-Project Costs</h3>
                   <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                    {costs.perUser.map((u) => (
-                      <div key={u.userId} className="flex items-center justify-between py-2">
-                        <span className="text-sm text-zinc-700 dark:text-zinc-300">{u.email}</span>
-                        <span className="text-sm text-zinc-500">{u.projectCount} projects ({u.billingEnabled} billing-enabled)</span>
+                    {costs.costData.perProject.map((p) => (
+                      <div key={p.gcpProjectId}>
+                        <button
+                          onClick={() => setExpandedCostProject(
+                            expandedCostProject === p.gcpProjectId ? null : p.gcpProjectId
+                          )}
+                          className="flex w-full items-center justify-between py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50 -mx-2 px-2 rounded transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                              {p.gogobotName || p.gcpProjectId}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              {p.userEmail && `${p.userEmail} · `}
+                              <span className="font-mono">{p.gcpProjectId}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 ml-4 shrink-0">
+                            <span className={`text-sm font-semibold ${p.totalCost > 10 ? 'text-red-600 dark:text-red-400' : p.totalCost > 1 ? 'text-yellow-600 dark:text-yellow-400' : 'text-zinc-900 dark:text-zinc-100'}`}>
+                              ${p.totalCost.toFixed(2)}
+                            </span>
+                            <svg
+                              className={`h-4 w-4 text-zinc-400 transition-transform ${expandedCostProject === p.gcpProjectId ? 'rotate-180' : ''}`}
+                              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </button>
+
+                        {expandedCostProject === p.gcpProjectId && p.services.length > 0 && (
+                          <div className="mb-2 ml-4 space-y-1">
+                            {p.services.map((s) => (
+                              <div key={s.service} className="flex items-center justify-between text-xs py-1">
+                                <span className="text-zinc-600 dark:text-zinc-400">{s.service}</span>
+                                <span className="font-mono text-zinc-700 dark:text-zinc-300">${s.cost.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
-
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 italic">{costs.note}</p>
+              ) : costs.setupGuide ? (
+                <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
+                  <p className="text-sm text-blue-800 dark:text-blue-300">{costs.setupGuide}</p>
+                </div>
+              ) : null}
             </div>
           ) : (
             <p className="text-sm text-zinc-500">Loading billing data...</p>
