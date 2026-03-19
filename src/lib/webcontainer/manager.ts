@@ -593,4 +593,40 @@ export class WebContainerManager {
     // Preserving devServerUrl means the preview iframe can immediately show
     // the running dev server without waiting for a new server-ready event.
   }
+
+  /**
+   * Reset the WebContainer for a new project. Stops the dev server, clears
+   * the dev server URL, and wipes the filesystem (except node_modules which
+   * will be overwritten by the next npm install). The WebContainer instance
+   * and boot promise are preserved since boot() can only be called once.
+   */
+  static async resetForNewProject(): Promise<void> {
+    // Kill the running dev server
+    if (WebContainerManager.devServerProcess) {
+      try { WebContainerManager.devServerProcess.kill(); } catch {}
+      WebContainerManager.devServerProcess = null;
+    }
+
+    // Clear the dev server URL (notifies subscribers → preview clears immediately)
+    WebContainerManager.devServerUrl = null;
+
+    // Wipe the filesystem so old project files don't leak into the new one
+    const container = WebContainerManager.instance;
+    if (container) {
+      try {
+        const entries = await container.fs.readdir('/', { withFileTypes: true });
+        for (const entry of entries) {
+          // Skip . and .. style entries
+          if (entry.name === '.' || entry.name === '..') continue;
+          try {
+            await container.fs.rm(`/${entry.name}`, { recursive: true });
+          } catch {
+            // Best-effort — some system entries may not be removable
+          }
+        }
+      } catch {
+        // If readdir fails, the container may not be fully booted yet — that's fine
+      }
+    }
+  }
 }

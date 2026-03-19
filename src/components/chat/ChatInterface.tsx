@@ -150,8 +150,13 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
     }
   }, [deployRef, deployProject, isDeploying, deploymentUrl, workspaceStep, containerError]);
 
-  // Load saved files on mount
+  // Load saved files when project changes
   useEffect(() => {
+    setIsLoadingFiles(true);
+    savedFilesRef.current = {};
+    setSavedFiles({});
+    lastSavedSnapshotRef.current = '';
+
     const loadSavedFiles = async () => {
       try {
         const auth = getAuth();
@@ -298,6 +303,13 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
     return unsubscribe;
   }, []);
 
+  // Clear preview immediately when project changes
+  useEffect(() => {
+    setPreviewUrl(null);
+    setWorkspaceStep('loading');
+    setContainerError(null);
+  }, [project.id]);
+
   // Initialize WebContainer after files are loaded
   useEffect(() => {
     if (isLoadingFiles) return;
@@ -323,15 +335,21 @@ export function ChatInterface({ project, className, deployRef, onWorkspaceStatus
 
         const manager = new WebContainerManager();
 
-        // Check if the dev server is already running (e.g. survived a re-mount)
-        const existingUrl = manager.getPreviewUrl();
-        if (existingUrl) {
-          console.log('WebContainer already running, reusing existing dev server');
-          setPreviewUrl(existingUrl);
-          setContainerManager(manager);
-          setWorkspaceStep('ready');
-          initializedProjectRef.current = project.id;
-          return;
+        // If switching projects, reset the container (stop old dev server, clear files)
+        if (initializedProjectRef.current !== null) {
+          console.log('Switching projects — resetting WebContainer...');
+          await WebContainerManager.resetForNewProject();
+        } else {
+          // First init — check if the dev server is already running (e.g. survived a re-mount)
+          const existingUrl = manager.getPreviewUrl();
+          if (existingUrl) {
+            console.log('WebContainer already running, reusing existing dev server');
+            setPreviewUrl(existingUrl);
+            setContainerManager(manager);
+            setWorkspaceStep('ready');
+            initializedProjectRef.current = project.id;
+            return;
+          }
         }
 
         // Ensure essential files always exist (may be missing from old snapshots or new projects)
