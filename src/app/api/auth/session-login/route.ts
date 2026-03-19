@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminAuth, getAdminDb } from '@/lib/firebase/admin';
+import { logger } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
-    console.error('Session login error:', error);
+    logger.error('Session login error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
   }
 }

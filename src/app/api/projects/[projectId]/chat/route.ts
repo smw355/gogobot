@@ -4,6 +4,7 @@ import { verifySession } from '@/lib/auth/verify-session';
 import { VertexAI, GenerativeModel } from '@google-cloud/vertexai';
 import { toolDeclarations } from '@/lib/ai/tools';
 import { getSystemPrompt } from '@/lib/ai/system-prompt';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 600; // 10 minutes — long Gemini inference + retries
@@ -240,10 +241,10 @@ export async function POST(
           for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
               if (attempt > 0) {
-                console.log(`Retry ${attempt}/${MAX_RETRIES} for ${PRIMARY_MODEL} after ${RETRY_DELAYS[attempt - 1]}ms...`);
+                logger.info('Retrying primary model', { model: PRIMARY_MODEL, attempt, maxRetries: MAX_RETRIES, delayMs: RETRY_DELAYS[attempt - 1] });
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]));
               } else {
-                console.log(`Trying ${PRIMARY_MODEL}...`);
+                logger.info('Trying primary model', { model: PRIMARY_MODEL });
               }
 
               const chat = primaryModel.startChat({
@@ -285,12 +286,12 @@ export async function POST(
                 }
               }
 
-              console.log(`${PRIMARY_MODEL} succeeded${attempt > 0 ? ` on retry ${attempt}` : ''}`);
+              logger.info('Primary model succeeded', { model: PRIMARY_MODEL, attempt });
               succeeded = true;
               break;
             } catch (modelError: any) {
               lastError = modelError;
-              console.error(`${PRIMARY_MODEL} attempt ${attempt} failed:`, modelError.message);
+              logger.error('Primary model attempt failed', { model: PRIMARY_MODEL, attempt, error: modelError.message });
 
               if (!isRateLimitError(modelError)) {
                 // Non-rate-limit error — fall back immediately (don't retry 404s, etc.)
@@ -303,7 +304,7 @@ export async function POST(
 
           // --- Fallback to secondary model if primary failed ---
           if (!succeeded) {
-            console.log(`Primary exhausted retries, falling back to ${FALLBACK_MODEL}`);
+            logger.warn('Primary model exhausted retries, falling back', { primary: PRIMARY_MODEL, fallback: FALLBACK_MODEL });
             try {
               const chat = fallbackModel.startChat({
                 history: chatHistory,
@@ -344,11 +345,11 @@ export async function POST(
                 }
               }
 
-              console.log(`${FALLBACK_MODEL} succeeded`);
+              logger.info('Fallback model succeeded', { model: FALLBACK_MODEL });
               succeeded = true;
             } catch (fallbackError: any) {
               lastError = fallbackError;
-              console.error(`${FALLBACK_MODEL} also failed:`, fallbackError.message);
+              logger.error('Fallback model also failed', { model: FALLBACK_MODEL, error: fallbackError.message });
             }
           }
 
@@ -369,7 +370,7 @@ export async function POST(
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
         } catch (error: any) {
-          console.error('Chat error:', error);
+          logger.error('Chat streaming error', { error: error.message, projectId });
 
           if (isRateLimitError(error)) {
             controller.enqueue(
@@ -408,7 +409,7 @@ export async function POST(
       },
     });
   } catch (error) {
-    console.error('Chat error:', error);
+    logger.error('Chat route error', { error: error instanceof Error ? error.message : String(error) });
     return new Response('Internal error', { status: 500 });
   }
 }

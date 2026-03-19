@@ -3,6 +3,7 @@ import { getAdminDb } from '@/lib/firebase/admin';
 import { verifySession } from '@/lib/auth/verify-session';
 import { deployToHosting } from '@/lib/gcp/firebase-hosting';
 import { smGetSecretValue } from '@/app/api/projects/[projectId]/secrets/route';
+import { logger } from '@/lib/logger';
 import { mkdtemp, writeFile, rm, readFile, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -59,7 +60,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
       sourceFiles[mainPath] = mainContent;
       await execMkdir(join(tempDir, 'src'));
       await writeFile(join(tempDir, mainPath), mainContent, 'utf-8');
-      console.log(`Auto-created ${mainPath} with CSS imports: [${cssImports.join(', ')}]`);
+      logger.info('Auto-created entry point', { mainPath, cssImports: cssImports.length });
     }
 
     // Ensure index.html has a module script entry point
@@ -74,7 +75,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
           `    <script type="module" src="${entryFile}"></script>\n  </body>`
         );
         await writeFile(join(tempDir, 'index.html'), sourceFiles['index.html'], 'utf-8');
-        console.log(`Auto-added <script type="module" src="${entryFile}"> to index.html`);
+        logger.info('Auto-added module script to index.html', { entryFile });
       }
     }
 
@@ -94,7 +95,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
         }
         if (changed) {
           await writeFile(join(tempDir, 'package.json'), JSON.stringify(pkg, null, 2), 'utf-8');
-          console.log('Auto-added react/react-dom to dependencies');
+          logger.info('Auto-added react/react-dom to dependencies');
         }
       } catch { /* no package.json */ }
     }
@@ -138,15 +139,15 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
         }
 
         if (depsAdded) {
-          console.log('Auto-added missing vite dependencies to package.json');
+          logger.info('Auto-added missing vite dependencies to package.json');
           await writeFile(pkgPath, JSON.stringify(pkg, null, 2), 'utf-8');
         }
       }
 
-      console.log('package.json deps:', JSON.stringify({
-        deps: Object.keys(pkg.dependencies || {}),
-        devDeps: Object.keys(pkg.devDependencies || {}),
-      }));
+      logger.debug('package.json deps', {
+        deps: Object.keys(pkg.dependencies || {}).length,
+        devDeps: Object.keys(pkg.devDependencies || {}).length,
+      } as any);
     } catch {
       // No package.json — just deploy source files as-is
     }
@@ -157,7 +158,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
     }
 
     // Install dependencies and build
-    console.log(`Building in ${tempDir}...`);
+    logger.info('Building project server-side', { tempDir });
     try {
       // Remove NODE_ENV entirely so npm installs ALL dependencies (including devDeps).
       // Cloud Run sets NODE_ENV=production which causes npm to omit devDependencies
@@ -173,7 +174,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
       const stderr = e.stderr?.toString()?.slice(-2000) || '';
       const stdout = e.stdout?.toString()?.slice(-2000) || '';
       const combined = `${stdout}\n${stderr}`.trim();
-      console.error('npm install failed output:', combined);
+      logger.error('npm install failed', { output: combined.slice(-500) });
       throw new Error(`npm install failed: ${combined.slice(-1500)}`);
     }
 
@@ -188,7 +189,7 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
       const stderr = e.stderr?.toString()?.slice(-2000) || '';
       const stdout = e.stdout?.toString()?.slice(-2000) || '';
       const combined = `${stdout}\n${stderr}`.trim();
-      console.error('Build failed output:', combined);
+      logger.error('Build failed', { output: combined.slice(-500) });
       throw new Error(`Build failed: ${combined.slice(-1500)}`);
     }
 
@@ -201,12 +202,12 @@ async function buildOnServer(sourceFiles: Record<string, string>): Promise<Recor
       throw new Error('Build produced no output in dist/');
     }
 
-    console.log(`Build produced ${Object.keys(builtFiles).length} files`);
+    logger.info('Build complete', { fileCount: Object.keys(builtFiles).length });
     return builtFiles;
   } finally {
     // Clean up temp directory
     await rm(tempDir, { recursive: true, force: true }).catch((cleanupErr) => {
-      console.warn(`Failed to clean up temp directory ${tempDir}:`, cleanupErr.message);
+      logger.warn('Failed to clean up temp directory', { tempDir, error: cleanupErr.message });
     });
   }
 }
@@ -280,7 +281,7 @@ async function injectSecrets(
     if (result.status === 'fulfilled') {
       secretValues.set(result.value.name, result.value.value);
     } else {
-      console.warn(`Failed to fetch secret for injection:`, result.reason);
+      logger.warn('Failed to fetch secret for injection', { error: String(result.reason) });
     }
   }
 
@@ -294,7 +295,7 @@ async function injectSecrets(
     });
   }
 
-  console.log(`Injected ${secretValues.size} secret(s) into deploy files`);
+  logger.info('Injected secrets into deploy files', { count: secretValues.size });
   return injectedFiles;
 }
 
@@ -346,19 +347,19 @@ export async function POST(
     let files: Record<string, string> | undefined;
     try {
       const contentLength = request.headers.get('content-length');
-      console.log(`Deploy: content-length=${contentLength || 'unknown'}`);
+      logger.debug('Deploy request received', { contentLength: contentLength || 'unknown' });
       const body = await request.json();
       files = body.files;
       if (files && Object.keys(files).length > 0) {
-        console.log(`Deploy: received ${Object.keys(files).length} files from client`);
+        logger.info('Deploy received files from client', { fileCount: Object.keys(files).length, projectId });
       }
     } catch (parseErr: any) {
-      console.error('Deploy: failed to parse request body:', parseErr.message || parseErr);
+      logger.error('Deploy failed to parse request body', { error: parseErr.message || String(parseErr), projectId });
       // Body parse failed — fall through to snapshot
     }
 
     if (!files || Object.keys(files).length === 0) {
-      console.log('Deploy: no files in request body, falling back to snapshot');
+      logger.info('No files in request body, falling back to snapshot', { projectId });
       const snapshotsRef = projectRef.collection('snapshots');
       const latestSnapshot = await snapshotsRef
         .orderBy('createdAt', 'desc')
@@ -367,7 +368,7 @@ export async function POST(
 
       if (!latestSnapshot.empty) {
         files = latestSnapshot.docs[0].data().files || {};
-        console.log(`Deploy: loaded ${Object.keys(files!).length} files from snapshot:`, Object.keys(files!));
+        logger.info('Loaded files from snapshot', { fileCount: Object.keys(files!).length, projectId });
       }
     }
 
@@ -378,7 +379,7 @@ export async function POST(
       );
     }
 
-    console.log(`Deploy received ${Object.keys(files).length} files:`, Object.keys(files));
+    logger.info('Starting deployment', { fileCount: Object.keys(files).length, projectId });
 
     // Ensure we have an index.html (source or built)
     if (!files['index.html'] && !files['public/index.html']) {
@@ -395,7 +396,7 @@ export async function POST(
         updatedAt: new Date(),
       });
     } catch (statusErr: any) {
-      console.warn('Failed to set deploying status:', statusErr.message);
+      logger.warn('Failed to set deploying status', { error: statusErr.message, projectId });
     }
 
     try {
@@ -406,7 +407,7 @@ export async function POST(
       );
 
       if (needsBuild) {
-        console.log('Project needs build — building server-side...');
+        logger.info('Project needs build — building server-side', { projectId });
         deployFiles = await buildOnServer(files);
       }
 
@@ -440,7 +441,7 @@ export async function POST(
             deployedBy: user.uid,
           });
         } catch (dbErr: any) {
-          console.warn('Failed to update deploy status in Firestore:', dbErr.message);
+          logger.warn('Failed to update deploy status in Firestore', { error: dbErr.message, projectId });
         }
 
         return NextResponse.json({
@@ -455,7 +456,7 @@ export async function POST(
             updatedAt: new Date(),
           });
         } catch (dbErr: any) {
-          console.warn('Failed to update error status in Firestore:', dbErr.message);
+          logger.warn('Failed to update error status in Firestore', { error: dbErr.message, projectId });
         }
 
         return NextResponse.json(
@@ -470,13 +471,13 @@ export async function POST(
           updatedAt: new Date(),
         });
       } catch (dbErr: any) {
-        console.warn('Failed to update error status in Firestore:', dbErr.message);
+        logger.warn('Failed to update error status in Firestore', { error: dbErr.message, projectId });
       }
 
       throw deployError;
     }
   } catch (error: any) {
-    console.error('Deploy error:', error);
+    logger.error('Deploy error', { error: error.message });
     return NextResponse.json(
       { error: error.message || 'Deployment failed' },
       { status: 500 }
@@ -511,7 +512,7 @@ export async function GET(
       gcpProject: project.gcpProject || null,
     });
   } catch (error: any) {
-    console.error('Get deployment status error:', error);
+    logger.error('Get deployment status error', { error: error.message });
     return NextResponse.json(
       { error: error.message || 'Failed to get deployment status' },
       { status: 500 }

@@ -15,6 +15,7 @@
 import { GoogleAuth } from 'google-auth-library';
 import { createHash } from 'crypto';
 import { gzipSync } from 'zlib';
+import { logger } from '@/lib/logger';
 
 let authClient: GoogleAuth | null = null;
 
@@ -89,7 +90,7 @@ export async function deployToHosting(
 
   try {
     // Step 1: Create a new version
-    console.log(`Creating new hosting version for site: ${siteId}`);
+    logger.info('Creating new hosting version', { siteId });
     const createVersionRes = await hostingFetch(`${baseUrl}/versions`, {
       method: 'POST',
       body: JSON.stringify({
@@ -120,7 +121,7 @@ export async function deployToHosting(
 
     const version = await createVersionRes.json();
     const versionName = version.name; // e.g. "sites/{siteId}/versions/{versionId}"
-    console.log(`Created version: ${versionName}`);
+    logger.info('Created hosting version', { versionName });
 
     // Step 2: Prepare file hashes (gzipped)
     // Firebase Hosting expects files as a hash map: {"/path": hash_of_gzipped_content}
@@ -137,7 +138,7 @@ export async function deployToHosting(
     }
 
     // Step 3: Populate files - tell Firebase which files this version contains
-    console.log(`Populating ${Object.keys(fileHashes).length} files...`);
+    logger.info('Populating hosting files', { fileCount: Object.keys(fileHashes).length, siteId });
     const populateRes = await hostingFetch(`${baseUrl}/${versionName.split('/').slice(-2).join('/')}:populateFiles`, {
       method: 'POST',
       body: JSON.stringify({ files: fileHashes }),
@@ -154,7 +155,7 @@ export async function deployToHosting(
 
     // Step 4: Upload any files that Firebase doesn't already have (gzipped)
     if (uploadRequiredHashes.length > 0 && uploadUrl) {
-      console.log(`Uploading ${uploadRequiredHashes.length} new files...`);
+      logger.info('Uploading new files to hosting', { count: uploadRequiredHashes.length, siteId });
       const failedUploads: string[] = [];
 
       for (const hash of uploadRequiredHashes) {
@@ -178,10 +179,10 @@ export async function deployToHosting(
               break;
             }
 
-            console.warn(`Upload attempt ${attempt + 1} failed for hash ${hash}: ${uploadRes.statusText}`);
+            logger.warn('Upload attempt failed', { attempt: attempt + 1, hash: hash.slice(0, 12), status: uploadRes.statusText });
             if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
           } catch (uploadErr: any) {
-            console.warn(`Upload attempt ${attempt + 1} error for hash ${hash}:`, uploadErr.message);
+            logger.warn('Upload attempt error', { attempt: attempt + 1, hash: hash.slice(0, 12), error: uploadErr.message });
             if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
           }
         }
@@ -192,13 +193,13 @@ export async function deployToHosting(
       }
 
       if (failedUploads.length > 0) {
-        console.error(`Failed to upload ${failedUploads.length} file(s) after retries`);
+        logger.error('Failed to upload files after retries', { failedCount: failedUploads.length, siteId });
         throw new Error(`Failed to upload ${failedUploads.length} file(s) to Firebase Hosting. Deployment may be incomplete.`);
       }
     }
 
     // Step 5: Finalize the version
-    console.log(`Finalizing version...`);
+    logger.info('Finalizing hosting version', { siteId });
     const versionPath = versionName.split('/').slice(-2).join('/');
     const finalizeRes = await hostingFetch(
       `${baseUrl}/${versionPath}?update_mask=status`,
@@ -214,7 +215,7 @@ export async function deployToHosting(
     }
 
     // Step 6: Create a release to make this version live
-    console.log(`Creating release...`);
+    logger.info('Creating hosting release', { siteId });
     const releaseRes = await hostingFetch(
       `${baseUrl}/releases?version_name=${encodeURIComponent(versionName)}`,
       { method: 'POST', body: JSON.stringify({}) }
@@ -228,7 +229,7 @@ export async function deployToHosting(
     const versionId = versionName.split('/').pop();
     const url = `https://${siteId}.web.app`;
 
-    console.log(`Deployed successfully to ${url}`);
+    logger.info('Deployed successfully', { url, siteId, versionId: versionName.split('/').pop() });
 
     return {
       success: true,
@@ -236,7 +237,7 @@ export async function deployToHosting(
       versionId,
     };
   } catch (error: any) {
-    console.error('Firebase Hosting deployment failed:', error);
+    logger.error('Firebase Hosting deployment failed', { siteId, error: error.message });
     return {
       success: false,
       error: error.message || 'Deployment failed',

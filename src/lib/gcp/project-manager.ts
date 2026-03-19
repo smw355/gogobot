@@ -18,6 +18,7 @@
 
 import { GoogleAuth } from 'google-auth-library';
 import { getAdminDb } from '@/lib/firebase/admin';
+import { logger } from '@/lib/logger';
 
 // APIs to enable in every new project
 const DEFAULT_APIS = [
@@ -62,7 +63,7 @@ async function getAccessToken(): Promise<string> {
   return token.token;
 }
 
-async function gcpFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function gcpFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = await getAccessToken();
   return fetch(url, {
     ...options,
@@ -134,7 +135,7 @@ export async function getOrCreateUserFolder(userId: string, userEmail?: string):
     ? `user-${userEmail.split('@')[0]}`
     : `user-${userId.slice(0, 12)}`;
 
-  console.log(`Creating user folder: ${displayName} under folder ${parentFolderId}`);
+  logger.info(`Creating user folder: ${displayName}`, { parentFolderId, userId });
 
   const res = await gcpFetch(
     'https://cloudresourcemanager.googleapis.com/v3/folders',
@@ -155,9 +156,9 @@ export async function getOrCreateUserFolder(userId: string, userEmail?: string):
 
     // If folder with same display name already exists, find and reuse it
     if (errMsg.includes('display name uniqueness')) {
-      console.log(`Folder "${displayName}" already exists, searching for it...`);
+      logger.info(`Folder "${displayName}" already exists, searching for it...`);
       folderId = await findFolderByDisplayName(parentFolderId, displayName);
-      console.log(`Found existing folder: ${folderId} for ${userId}`);
+      logger.info(`Found existing folder`, { folderId, userId });
     } else {
       throw new Error(`Failed to create user folder: ${errMsg}`);
     }
@@ -166,13 +167,13 @@ export async function getOrCreateUserFolder(userId: string, userEmail?: string):
     // Folder creation is a long-running operation — poll for completion
     try {
       folderId = await waitForFolderOperation(op.name);
-      console.log(`User folder created: ${folderId} for ${userId}`);
+      logger.info(`User folder created`, { folderId, userId });
     } catch (opErr: any) {
       // Operation failed — check if it's a uniqueness constraint (folder already exists)
       if (opErr.message?.includes('display name uniqueness')) {
-        console.log(`Folder "${displayName}" already exists, searching for it...`);
+        logger.info(`Folder "${displayName}" already exists, searching for it...`);
         folderId = await findFolderByDisplayName(parentFolderId, displayName);
-        console.log(`Found existing folder: ${folderId} for ${userId}`);
+        logger.info(`Found existing folder`, { folderId, userId });
       } else {
         throw opErr;
       }
@@ -288,7 +289,7 @@ export async function createGcpProject(
   const billingAccountId = process.env.GCP_BILLING_ACCOUNT_ID;
   const platformProjectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
 
-  console.log(`Creating GCP project: ${gcpProjectId} for Gogobot project: ${gogobotProjectId}`);
+  logger.info('Creating GCP project', { gcpProjectId, gogobotProjectId, userId });
 
   // Step 1: Get or create the user's folder
   const userFolderId = await getOrCreateUserFolder(userId, userEmail);
@@ -320,18 +321,18 @@ export async function createGcpProject(
   }
 
   const createOp = await createRes.json();
-  console.log(`GCP project creation started: ${createOp.name}`);
+  logger.info('GCP project creation started', { gcpProjectId, operation: createOp.name });
 
   const projectNumber = await waitForProjectOperation(createOp.name);
-  console.log(`GCP project created: ${gcpProjectId} (number: ${projectNumber})`);
+  logger.info('GCP project created', { gcpProjectId, projectNumber });
 
   // Step 3: Link billing account
   if (billingAccountId) {
     try {
       await linkBillingAccount(gcpProjectId, billingAccountId);
-      console.log(`Billing linked for ${gcpProjectId}`);
+      logger.info('Billing linked', { gcpProjectId });
     } catch (err: any) {
-      console.error(`Failed to link billing for ${gcpProjectId}:`, err.message);
+      logger.error('Failed to link billing', { gcpProjectId, error: err.message });
     }
   }
 
@@ -341,9 +342,9 @@ export async function createGcpProject(
     try {
       await enableApi(gcpProjectId, api);
       enabledApis.push(api);
-      console.log(`Enabled ${api} for ${gcpProjectId}`);
+      logger.info(`Enabled API: ${api}`, { gcpProjectId });
     } catch (err: any) {
-      console.error(`Failed to enable ${api}:`, err.message);
+      logger.error(`Failed to enable API: ${api}`, { gcpProjectId, error: err.message });
     }
   }
 
@@ -355,39 +356,39 @@ export async function createGcpProject(
 
   try {
     await addFirebase(gcpProjectId);
-    console.log(`Firebase added to ${gcpProjectId}`);
+    logger.info('Firebase added', { gcpProjectId });
 
     hostingSiteId = gcpProjectId;
     hostingUrl = `https://${gcpProjectId}.web.app`;
-    console.log(`Hosting site ready: ${hostingUrl}`);
+    logger.info('Hosting site ready', { gcpProjectId, hostingUrl });
 
     // Step 6: Create a Firebase Web App and get client config
     try {
       const webApp = await createWebAppAndGetConfig(gcpProjectId);
       firebaseAppId = webApp.appId;
       firebaseConfig = webApp.config;
-      console.log(`Firebase Web App created: ${firebaseAppId}`);
+      logger.info('Firebase Web App created', { gcpProjectId, firebaseAppId });
     } catch (err: any) {
-      console.error(`Failed to create Firebase Web App:`, err.message);
+      logger.error('Failed to create Firebase Web App', { gcpProjectId, error: err.message });
     }
 
     // Step 7: Create Firestore database so it's ready for apps that need data persistence
     try {
       await createFirestoreDatabase(gcpProjectId);
-      console.log(`Firestore database created for ${gcpProjectId}`);
+      logger.info('Firestore database created', { gcpProjectId });
     } catch (err: any) {
-      console.error(`Failed to create Firestore database:`, err.message);
+      logger.error('Failed to create Firestore database', { gcpProjectId, error: err.message });
     }
 
     // Step 8: Set open Firestore security rules (sandbox projects allow all reads/writes)
     try {
       await setFirestoreRules(gcpProjectId);
-      console.log(`Firestore rules set for ${gcpProjectId}`);
+      logger.info('Firestore rules set', { gcpProjectId });
     } catch (err: any) {
-      console.error(`Failed to set Firestore rules:`, err.message);
+      logger.error('Failed to set Firestore rules', { gcpProjectId, error: err.message });
     }
   } catch (err: any) {
-    console.error(`Failed to add Firebase:`, err.message);
+    logger.error('Failed to add Firebase', { gcpProjectId, error: err.message });
   }
 
   return {
@@ -457,7 +458,7 @@ async function linkBillingAccount(projectId: string, billingAccountId: string): 
 
     // Retry on precondition failures (project not ready yet)
     if (message.includes('Precondition') && attempt < 2) {
-      console.log(`Billing link attempt ${attempt + 1} failed (precondition), retrying in ${5 * (attempt + 1)}s...`);
+      logger.warn('Billing link precondition failed, retrying', { attempt: attempt + 1, delaySec: 5 * (attempt + 1), gcpProjectId: projectId });
       await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
       continue;
     }
@@ -791,7 +792,7 @@ export async function configureStorageCors(projectId: string): Promise<void> {
     const err = await res.json().catch(() => ({}));
     // 404 = bucket doesn't exist yet — that's fine, it'll be created later
     if (err.error?.code === 404) {
-      console.log(`Storage bucket ${bucket} not found yet — CORS will need to be configured later`);
+      logger.info('Storage bucket not found yet — CORS will be configured later', { bucket });
       return;
     }
     throw new Error(`Failed to configure Storage CORS: ${err.error?.message || res.statusText}`);

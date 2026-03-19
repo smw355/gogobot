@@ -11,7 +11,7 @@ import type { WorkspaceStatus } from '@/components/chat/ChatInterface';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import type { Project } from '@/types';
-import { ArrowLeft, Rocket, ExternalLink, Cloud, AlertCircle, Loader2, Trash2, Lock, ImageIcon } from 'lucide-react';
+import { ArrowLeft, Rocket, ExternalLink, Cloud, AlertCircle, Loader2, Trash2, Lock, ImageIcon, RefreshCw } from 'lucide-react';
 import { SecretsPanel } from '@/components/secrets/SecretsPanel';
 import { AssetsPanel } from '@/components/assets/AssetsPanel';
 import Link from 'next/link';
@@ -46,6 +46,7 @@ export default function ProjectPage() {
   const [showSecrets, setShowSecrets] = useState(false);
   const [showAssets, setShowAssets] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRetryingProvision, setIsRetryingProvision] = useState(false);
 
   const projectId = params.projectId as string;
 
@@ -69,6 +70,11 @@ export default function ProjectPage() {
             setDeploymentUrl(data.deployment.url);
           }
 
+          // Clear retry state when provisioning succeeds or starts
+          if (data.gcpProject?.status === 'ready' || data.gcpProject?.status === 'provisioning') {
+            setIsRetryingProvision(false);
+          }
+
           // Redirect if project was deleted (e.g. by another tab)
           if (data.status === 'deleted') {
             router.push('/projects');
@@ -88,34 +94,28 @@ export default function ProjectPage() {
     return () => unsubscribe();
   }, [user, projectId, router]);
 
-  // Auto-retry provisioning when status is 'error'
-  const retryTriggered = useRef(false);
-  useEffect(() => {
-    if (!project || !projectId || retryTriggered.current) return;
-    if (project.gcpProject?.status !== 'error') return;
+  const handleRetryProvision = async () => {
+    setIsRetryingProvision(true);
+    try {
+      const auth = getAuth();
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) return;
 
-    retryTriggered.current = true;
-    console.log('Auto-retrying GCP provisioning...');
+      const res = await fetch(`/api/projects/${projectId}/retry-provision`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
 
-    (async () => {
-      try {
-        const auth = getAuth();
-        const idToken = await auth.currentUser?.getIdToken();
-        if (!idToken) return;
-
-        await fetch(`/api/projects/${projectId}/tools`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({ tool: 'getProjectInfo', args: {} }),
-        });
-      } catch (err) {
-        console.error('Failed to trigger provisioning retry:', err);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to retry provisioning');
       }
-    })();
-  }, [project, projectId]);
+      // onSnapshot will pick up the status change to 'provisioning'
+    } catch (err: any) {
+      console.error('Failed to retry provisioning:', err);
+      setIsRetryingProvision(false);
+    }
+  };
 
   const handleDeploy = async () => {
     if (!deployRef.current) return;
@@ -207,7 +207,7 @@ export default function ProjectPage() {
           {project.gcpProject?.status === 'error' && (
             <span className="flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400">
               <AlertCircle className="h-3 w-3" />
-              Cloud setup failed — retrying
+              Cloud setup failed
             </span>
           )}
         </div>
@@ -348,6 +348,35 @@ export default function ProjectPage() {
             Setting up your cloud environment (GCP project, Firebase Hosting, APIs). This usually takes about a minute.
             You can start chatting while it finishes.
           </p>
+        </div>
+      )}
+
+      {/* Provisioning error banner */}
+      {project.gcpProject?.status === 'error' && (
+        <div className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-2.5 dark:border-red-800 dark:bg-red-900/20">
+          <AlertCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-800 dark:text-red-300">
+              Cloud setup failed
+            </p>
+            {project.gcpProject?.error && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 truncate">
+                {project.gcpProject.error}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleRetryProvision}
+            disabled={isRetryingProvision}
+            className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {isRetryingProvision ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+            Retry
+          </button>
         </div>
       )}
 
