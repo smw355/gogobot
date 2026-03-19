@@ -8,7 +8,7 @@ import { logger } from '@/lib/logger';
 let cachedResult: { data: any; timestamp: number; range: string } | null = null;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
-const PLATFORM_PROJECT = process.env.GOOGLE_CLOUD_PROJECT_ID || 'gogobot-dev-6029b';
+const BQ_PROJECT = process.env.GCP_BILLING_BQ_PROJECT || 'gogobot-p-93zg25zw-gf8a';
 const BQ_DATASET = 'billing_export';
 
 /**
@@ -16,7 +16,7 @@ const BQ_DATASET = 'billing_export';
  */
 async function bqQuery(sql: string): Promise<any[]> {
   const res = await gcpFetch(
-    `https://bigquery.googleapis.com/bigquery/v2/projects/${PLATFORM_PROJECT}/queries`,
+    `https://bigquery.googleapis.com/bigquery/v2/projects/${BQ_PROJECT}/queries`,
     {
       method: 'POST',
       body: JSON.stringify({
@@ -49,7 +49,7 @@ async function bqQuery(sql: string): Promise<any[]> {
  */
 async function findBillingTable(): Promise<string | null> {
   const res = await gcpFetch(
-    `https://bigquery.googleapis.com/bigquery/v2/projects/${PLATFORM_PROJECT}/datasets/${BQ_DATASET}/tables?maxResults=20`
+    `https://bigquery.googleapis.com/bigquery/v2/projects/${BQ_PROJECT}/datasets/${BQ_DATASET}/tables?maxResults=20`
   );
 
   if (!res.ok) return null;
@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
 
       if (tableName) {
         const days = range === '7d' ? 7 : range === '90d' ? 90 : 30;
-        const fullTable = `\`${PLATFORM_PROJECT}.${BQ_DATASET}.${tableName}\``;
+        const fullTable = `\`${BQ_PROJECT}.${BQ_DATASET}.${tableName}\``;
 
         // Per-project + service cost breakdown
         const rows = await bqQuery(`
