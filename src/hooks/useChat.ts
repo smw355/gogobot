@@ -255,6 +255,12 @@ export function useChat(
         let continueLoop = true;
         let consecutiveFailures = 0;
         let lastWasRateLimited = false;
+        // Stall detection: track repeated identical tool calls across iterations
+        const recentToolSignatures: string[] = []; // last N iteration signatures
+        const MAX_REPEATED_ITERATIONS = 3;
+        // Per-tool call tracking: block identical individual tool calls
+        const toolCallCounts = new Map<string, number>(); // signature → count
+        const MAX_IDENTICAL_TOOL_CALLS = 3;
 
         while (continueLoop && iteration < MAX_TOOL_ITERATIONS && !shouldStopRef.current) {
           // Back off if the last iteration hit a rate limit
@@ -326,6 +332,27 @@ export function useChat(
                           : msg
                       )
                     );
+
+                    // Hard stall block: skip execution if this exact tool+args has been called too many times
+                    const toolSig = `${toolCall.name}:${JSON.stringify(toolCall.args)}`;
+                    const callCount = (toolCallCounts.get(toolSig) || 0) + 1;
+                    toolCallCounts.set(toolSig, callCount);
+
+                    if (callCount > MAX_IDENTICAL_TOOL_CALLS) {
+                      toolCall.result = {
+                        success: false,
+                        error: `BLOCKED: You have called ${toolCall.name} with the same arguments ${callCount} times. This tool call was not executed. Use a different tool or different arguments to proceed. Build the UI with the information you already have.`,
+                      };
+                      setMessages((prev) =>
+                        prev.map((msg) =>
+                          msg.id === assistantMessageId
+                            ? { ...msg, toolCalls: [...toolCalls] }
+                            : msg
+                        )
+                      );
+                      consecutiveFailures++;
+                      break;
+                    }
 
                     // Execute tool in WebContainer
                     try {
@@ -450,6 +477,15 @@ export function useChat(
           if (toolCalls.length === 0) {
             continueLoop = false;
           } else {
+            // Stall detection: check if the AI is repeating the same tool calls across iterations
+            const iterationSignature = toolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.args)}`).join('|');
+            recentToolSignatures.push(iterationSignature);
+            if (recentToolSignatures.length > MAX_REPEATED_ITERATIONS) {
+              recentToolSignatures.shift();
+            }
+            const isStalled = recentToolSignatures.length >= MAX_REPEATED_ITERATIONS &&
+              recentToolSignatures.every(sig => sig === iterationSignature);
+
             // Build Gemini-format history entries for the next iteration
 
             // Assistant turn with tool calls
@@ -460,10 +496,20 @@ export function useChat(
             });
 
             // User turn with tool results (truncated to keep payload manageable)
-            chatHistory.push({
-              role: 'user',
-              toolResults: toolCalls.map(tc => ({ name: tc.name, result: truncateResult(tc.result) })),
-            });
+            // If stalled, inject a nudge to break the loop
+            const toolResults = toolCalls.map(tc => ({ name: tc.name, result: truncateResult(tc.result) }));
+            if (isStalled) {
+              chatHistory.push({
+                role: 'user',
+                toolResults,
+                content: `SYSTEM: You have called ${toolCalls[0]?.name} ${MAX_REPEATED_ITERATIONS} times in a row with the same result. Stop calling it and move on. Build the UI with placeholder data first — you can connect to cloud services later.`,
+              });
+            } else {
+              chatHistory.push({
+                role: 'user',
+                toolResults,
+              });
+            }
           }
         }
 

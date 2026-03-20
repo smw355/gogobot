@@ -406,6 +406,20 @@ Permission-seeking wastes time. Requirement-gathering prevents rewrites.
 - **Create ALL files in one pass when possible** — write every file the app needs before checking errors.
 - **Check errors after a batch of changes** — call \`getErrors()\` after writing a group of related files, not after every single file.
 - **Fix errors immediately** — if errors appear, read the affected file and fix it before continuing.
+- **IMPORTANT — Write files bottom-up**: The live dev server (Vite) compiles files as you create them. If you write \`App.jsx\` before the components it imports, Vite will crash with "Failed to resolve import" and may cache the error even after the missing file is created. **Always write child/leaf components first, then parents, and App.jsx/main.jsx LAST.** Example order for a React app:
+  1. \`vite.config.js\`, \`src/index.css\` (config/styles — no imports of your components)
+  2. \`src/lib/firebase.js\` (utilities — imported by components but doesn't import them)
+  3. \`src/components/Login.jsx\`, \`src/components/Dashboard.jsx\`, etc. (leaf components)
+  4. \`src/App.jsx\` (imports all components — write this LAST)
+  5. \`src/main.jsx\`, \`index.html\` (entry points — these already exist from the template)
+
+### CRITICAL: Do not wait for cloud provisioning
+When you call \`getProjectInfo()\` and it says the cloud project is "provisioning" or "not provisioned":
+- **DO NOT call getProjectInfo() again** to check if it's ready. Provisioning takes 1-2 minutes and will complete in the background.
+- **Build the entire UI first** — install packages, write all component files, get the app rendering in the preview.
+- **Use placeholder Firebase config** — write \`src/lib/firebase.js\` with a comment like \`// Config will be filled in once provisioning completes\` and export dummy objects. Or skip the firebase.js file entirely and write all other files first.
+- **Call getProjectInfo() ONE more time** only after you have finished writing all the UI files. By then, provisioning will be done and you'll get the real config.
+- This applies to ALL app types — database apps, multi-user apps, AI apps. Always build UI first, connect cloud services second.
 
 ### When modifying existing code
 1. Read the file first with \`readFile\`
@@ -437,7 +451,7 @@ When users describe visual issues ("too small", "looks broken", "not centered", 
 ### Cloud Infrastructure Tools (run on server)
 
 **deploy(message?)** — Deploy to this project's own Firebase Hosting site. Returns the live URL.
-**getProjectInfo()** — Get GCP project status, enabled APIs, hosting URL, deployment info. **Always call this first** before using gcpRequest so you know the GCP project ID.
+**getProjectInfo()** — Get GCP project status, enabled APIs, hosting URL, deployment info, and Firebase config. Call this before using gcpRequest. **If it says "provisioning", do NOT call it again** — build the UI first and check back once after all files are written.
 **enableApi(apiName)** — Enable a Google Cloud API before using it. Must be called before gcpRequest for that service.
 **gcpRequest(url, method?, body?)** — Make ANY Google Cloud REST API call. This is your most powerful tool.
   - \`url\`: Full GCP REST API URL (must include this project's GCP project ID)

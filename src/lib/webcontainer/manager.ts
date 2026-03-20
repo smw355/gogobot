@@ -170,15 +170,26 @@ export class WebContainerManager {
     );
   }
 
-  private async stopDevServer(): Promise<void> {
+  async stopDevServer(): Promise<void> {
     if (WebContainerManager.devServerProcess) {
-      console.log('Stopping dev server for build...');
+      console.log('Stopping dev server...');
       try { WebContainerManager.devServerProcess.kill(); } catch {}
       WebContainerManager.devServerProcess = null;
       WebContainerManager.devServerUrl = null;
       // Give it a moment to release resources
       await new Promise(resolve => setTimeout(resolve, 500));
     }
+  }
+
+  /**
+   * Restart the dev server. Clears the error buffer so stale Vite module
+   * resolution errors don't persist after the restart.
+   */
+  async restartDevServer(): Promise<void> {
+    await this.stopDevServer();
+    this.errorBuffer = [];
+    await this.startDevServer();
+    console.log('Dev server restarted (error buffer cleared)');
   }
 
   async writeFile(path: string, content: string): Promise<void> {

@@ -12,6 +12,10 @@ export interface ToolExecutorOptions {
   onDeployComplete?: (result: { success: boolean; url?: string; error?: string }) => void;
 }
 
+// Cache for getProjectInfo to avoid redundant server calls during provisioning
+const PROJECT_INFO_CACHE_TTL_MS = 30_000; // 30 seconds
+let projectInfoCache: { result: any; timestamp: number; status: string } | null = null;
+
 export class ToolExecutor {
   private options?: ToolExecutorOptions;
 
@@ -34,6 +38,27 @@ export class ToolExecutor {
             toolCall.args.path,
             toolCall.args.content
           );
+
+          // Auto-recovery: check if Vite has stale "Failed to resolve import" errors
+          // for the file we just created. This happens when a parent file (e.g. App.jsx)
+          // is written before its child dependencies — Vite caches the missing module
+          // error and doesn't recover even after the file appears.
+          try {
+            const errors = this.container.getErrors();
+            const filename = toolCall.args.path.replace(/^\.?\//, ''); // normalize path
+            const basename = filename.split('/').pop()?.replace(/\.[^.]+$/, '') || '';
+            const hasStaleImportError = errors.some(err =>
+              /Failed to resolve import|Could not resolve/.test(err) &&
+              (err.includes(filename) || err.includes(basename))
+            );
+            if (hasStaleImportError) {
+              console.log(`Auto-restarting dev server: stale import error for ${filename}`);
+              await this.container.restartDevServer();
+            }
+          } catch {
+            // Best-effort — don't fail the writeFile if error check fails
+          }
+
           return {
             success: true,
             message: `Created/updated file: ${toolCall.args.path}`,
@@ -224,6 +249,21 @@ export class ToolExecutor {
       throw new Error('Tool executor not configured');
     }
 
+    // Cache getProjectInfo during provisioning to avoid redundant server calls
+    if (toolCall.name === 'getProjectInfo') {
+      if (
+        projectInfoCache &&
+        Date.now() - projectInfoCache.timestamp < PROJECT_INFO_CACHE_TTL_MS &&
+        projectInfoCache.status === 'provisioning'
+      ) {
+        return {
+          ...projectInfoCache.result,
+          _cached: true,
+          message: projectInfoCache.result.message + ' (cached — same result as before, do not call again)',
+        };
+      }
+    }
+
     const { projectId, getIdToken } = this.options;
 
     const idToken = await getIdToken();
@@ -259,6 +299,16 @@ export class ToolExecutor {
         success: false,
         error: result.error || 'Server-side tool execution failed',
       };
+    }
+
+    // Update cache for getProjectInfo
+    if (toolCall.name === 'getProjectInfo') {
+      const status = result.status || result.provisioningStatus || 'ready';
+      projectInfoCache = { result, timestamp: Date.now(), status };
+      // Clear cache once provisioning completes so next call gets fresh data
+      if (status === 'ready') {
+        projectInfoCache = null;
+      }
     }
 
     return result;

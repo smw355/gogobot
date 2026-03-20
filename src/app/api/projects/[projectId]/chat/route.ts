@@ -106,15 +106,17 @@ function convertHistoryToGemini(history: any[]): any[] {
     if (msg.role === 'user') {
       if (msg.toolResults && Array.isArray(msg.toolResults)) {
         // Tool results → functionResponse parts
-        geminiMessages.push({
-          role: 'user',
-          parts: msg.toolResults.map((tr: any) => ({
-            functionResponse: {
-              name: tr.name,
-              response: tr.result || { success: true },
-            },
-          })),
-        });
+        const parts: any[] = msg.toolResults.map((tr: any) => ({
+          functionResponse: {
+            name: tr.name,
+            response: tr.result || { success: true },
+          },
+        }));
+        // Include any additional text (e.g. stall detection nudge)
+        if (msg.content && typeof msg.content === 'string') {
+          parts.push({ text: msg.content });
+        }
+        geminiMessages.push({ role: 'user', parts });
       } else if (typeof msg.content === 'string') {
         geminiMessages.push({
           role: 'user',

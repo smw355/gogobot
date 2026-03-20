@@ -145,7 +145,7 @@ export async function POST(
           result = {
             success: true,
             status: 'provisioning',
-            message: 'Cloud project provisioning is being retried. Check back in a moment.',
+            message: 'Cloud project provisioning is being retried. It usually takes 1-2 minutes. DO NOT call getProjectInfo again to check — build the UI first with placeholder data. The cloud services will be ready by the time you need them.',
           };
           break;
         }
@@ -154,7 +154,7 @@ export async function POST(
           result = {
             success: true,
             status: project.gcpProject?.status || 'not provisioned',
-            message: 'Cloud project is still being set up.',
+            message: 'Cloud project is still provisioning (usually takes 1-2 minutes). DO NOT call getProjectInfo again to wait — build the UI first with placeholder/mock data. For Firebase apps, write the firebase.js file with a placeholder config comment and fill it in later. Call getProjectInfo ONE more time after you have finished building the UI.',
           };
         } else {
           const status = await getGcpProjectStatus(gcpProjectId);
