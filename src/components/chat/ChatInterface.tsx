@@ -533,15 +533,25 @@ export default defineConfig({
                 What would you like to build?
               </h3>
               <p className="mt-2 max-w-sm text-center text-sm text-zinc-600 dark:text-zinc-400">
-                Describe your idea and I'll help you create it step by step.
+                Describe your idea and I&apos;ll build it. Try one of these to get started:
               </p>
-              <div className="mt-6 space-y-2 text-sm text-zinc-500 dark:text-zinc-400">
-                <p>Try something like:</p>
-                <ul className="list-inside list-disc space-y-1">
-                  <li>"Create a landing page for my bakery"</li>
-                  <li>"Build a simple todo app"</li>
-                  <li>"Make a contact form that emails me"</li>
-                </ul>
+              <div className="mt-6 flex max-w-lg flex-wrap justify-center gap-2">
+                {[
+                  { text: 'A portfolio site with a projects gallery', color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50' },
+                  { text: 'An expense tracker that saves my spending data', color: 'bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50' },
+                  { text: 'A team dashboard where admins manage members', color: 'bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-950/30 dark:text-purple-300 dark:hover:bg-purple-950/50' },
+                  { text: 'An AI chatbot that answers questions about my docs', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50' },
+                  { text: 'I have an idea — help me figure out the right approach', color: 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700' },
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion.text}
+                    type="button"
+                    onClick={() => sendMessage(suggestion.text)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${suggestion.color}`}
+                  >
+                    {suggestion.text}
+                  </button>
+                ))}
               </div>
             </div>
           )}

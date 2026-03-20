@@ -222,6 +222,7 @@ export async function POST(
             currentFiles: Array.isArray(currentFiles) ? currentFiles : undefined,
             secretNames: secretNames.length > 0 ? secretNames : undefined,
             assetUrls: assetUrls.length > 0 ? assetUrls : undefined,
+            category: project.category || null,
           });
 
           const { primaryModel, fallbackModel } = getModels();

@@ -1,12 +1,13 @@
 // Gogobot Agent System Prompt
 
-import type { GcpProjectConfig } from '@/types';
+import type { GcpProjectConfig, ProjectCategory } from '@/types';
 
 interface SystemPromptOptions {
   currentFiles?: string[];
   gcpProject?: GcpProjectConfig;
   secretNames?: string[];
   assetUrls?: { name: string; url: string }[];
+  category?: ProjectCategory | null;
 }
 
 // Default template files that every new project starts with
@@ -17,8 +18,22 @@ function isNewProject(files?: string[]): boolean {
   return files.every(f => DEFAULT_FILES.has(f));
 }
 
-// Detect app type from project name for blueprint selection
-function detectAppType(name: string): 'saas' | 'ai-assistant' | 'ai-automation' | null {
+// Map explicit category to blueprint type
+type AppType = 'saas' | 'ai-assistant' | 'ai-automation' | 'crud' | null;
+
+function mapCategoryToAppType(category?: ProjectCategory | null): AppType {
+  switch (category) {
+    case 'multi-user-app':    return 'saas';
+    case 'ai-powered-app':    return 'ai-assistant';
+    case 'app-with-database': return 'crud';
+    case 'static-website':    return null; // Tier 1, no blueprint needed
+    case 'something-else':    return null; // AI will ask
+    default:                  return null;
+  }
+}
+
+// Legacy fallback: detect app type from project name for projects created before category picker
+function detectAppType(name: string): AppType {
   const n = name.toLowerCase();
   if (/\b(chat\s?bot|ai\s?assist|copilot|agent|ask\s|gpt|gemini)\b/.test(n)) return 'ai-assistant';
   if (/\b(automat|workflow|pipeline|schedul|scrape|crawl)\b/.test(n)) return 'ai-automation';
@@ -117,16 +132,51 @@ Tell the user about this phased approach upfront.
 2. What external services does it connect to?
 3. Manual trigger (button) or scheduled (automatic)?`;
 
+    case 'crud':
+      return `
+
+### Blueprint: Data-Driven App with Firestore
+
+**Architecture**: React + Firestore (already provisioned — no setup needed)
+
+**File structure**:
+\`\`\`
+src/lib/firebase.js       — Firebase init (Firestore)
+src/App.jsx               — Main app with state management
+src/components/            — UI components (forms, lists, detail views)
+\`\`\`
+
+**Data model** (design BEFORE writing components):
+- Identify the main entities (e.g. tasks, recipes, expenses, inventory items)
+- Each entity gets a Firestore collection: \`/[entities]/{id}\` — \`{ ...fields, createdAt }\`
+- Use \`serverTimestamp()\` for all timestamps
+- Use \`onSnapshot\` for real-time updates so the UI stays in sync
+
+**Build approach**:
+1. Design the data model based on what the user wants to track
+2. Build the UI with forms for creating/editing and lists for viewing
+3. Connect to Firestore — data persists immediately, no backend needed
+
+**When to suggest adding auth**: If the user mentions multiple people using the app, sharing data, or "my data" vs "their data" — suggest upgrading to the Multi-User App pattern with Firebase Auth.
+
+**Before coding, ask the user**:
+1. What are you tracking? (what are the main data fields?)
+2. How should items be organized? (categories, tags, dates?)
+3. Will multiple people use this, or just you?`;
+
     default:
       return '';
   }
 }
 
 export function getSystemPrompt(projectName: string, options?: SystemPromptOptions): string {
-  const { currentFiles, gcpProject, secretNames, assetUrls } = options || {};
+  const { currentFiles, gcpProject, secretNames, assetUrls, category } = options || {};
 
   const freshProject = isNewProject(currentFiles);
-  const appType = freshProject ? detectAppType(projectName) : null;
+  // Use explicit category if available; fall back to name-regex for legacy projects
+  const appType = freshProject
+    ? (mapCategoryToAppType(category) ?? detectAppType(projectName))
+    : null;
 
   // For existing projects, show the file tree so AI doesn't need to call listFiles
   const filesContext = !freshProject && currentFiles?.length
@@ -148,7 +198,25 @@ ${assetUrls?.length ? `- **Uploaded Assets**:\n${assetUrls.map(a => `  - ${a.nam
 Use \`getProjectInfo\` to get the latest infrastructure status at any time.`
     : '';
 
-  const blueprintSection = appType ? getBlueprint(appType) : '';
+  const blueprintSection = appType
+    ? getBlueprint(appType)
+    : (freshProject && (category === 'something-else' || !category))
+      ? `
+
+### No specific app type selected — discover what to build
+
+The user hasn't chosen a specific app category. Before building, briefly ask what kind of app they have in mind. Frame it as quick choices:
+
+"Before I start building, it helps to know what kind of app you're thinking of:
+- **A website** — shows information, no login or saved data needed (portfolio, landing page, docs)
+- **A data app** — tracks and manages information (task tracker, expense log, inventory)
+- **A multi-user app** — people sign up, different roles see different things (team tool, classroom, coaching platform)
+- **An AI-powered app** — uses AI to chat, analyze, generate, or automate (chatbot, summarizer, writing tool)
+
+Or just describe your idea and I'll figure out the best approach!"
+
+Once the user answers, select the appropriate architecture pattern and proceed. Don't re-ask — one round of discovery is enough.`
+      : '';
 
   const newProjectInstructions = freshProject
     ? `

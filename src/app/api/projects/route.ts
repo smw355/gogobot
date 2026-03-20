@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { name } = await request.json();
+    const { name, category } = await request.json();
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
     }
@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
     // Create the Firestore project document
     const projectRef = await db.collection('projects').add({
       name: name.trim(),
+      category: category || null,
       userId: user.uid,
       status: 'active',
       gcpProject: {

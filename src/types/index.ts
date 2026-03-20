@@ -3,6 +3,14 @@
 // User roles
 export type UserRole = 'admin' | 'user';
 
+// Project category (selected at creation time)
+export type ProjectCategory =
+  | 'static-website'
+  | 'app-with-database'
+  | 'multi-user-app'
+  | 'ai-powered-app'
+  | 'something-else';
+
 // Project status
 export type ProjectStatus = 'active' | 'deploying' | 'deployed' | 'error' | 'deleted';
 
@@ -67,6 +75,7 @@ export interface GcpProjectConfig {
 export interface Project {
   id: string;
   name: string;
+  category?: ProjectCategory;
   userId: string;
   status: ProjectStatus;
   gcpProject?: GcpProjectConfig;
@@ -111,4 +120,5 @@ export interface ToolCall {
 export interface CreateProjectInput {
   name: string;
   description?: string;
+  category?: ProjectCategory;
 }
