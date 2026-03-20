@@ -26,6 +26,7 @@ const DEFAULT_APIS = [
   'firebase.googleapis.com',
   'firestore.googleapis.com',
   'firebaserules.googleapis.com',
+  'identitytoolkit.googleapis.com',
   'logging.googleapis.com',
 ];
 
@@ -386,6 +387,16 @@ export async function createGcpProject(
       logger.info('Firestore rules set', { gcpProjectId });
     } catch (err: any) {
       logger.error('Failed to set Firestore rules', { gcpProjectId, error: err.message });
+    }
+
+    // Step 9: Enable email/password auth provider so apps can test auth in preview
+    // OAuth providers (Google, GitHub, etc.) require manual console setup, but
+    // email/password works immediately and doesn't need domain whitelisting.
+    try {
+      await enableEmailPasswordAuth(gcpProjectId);
+      logger.info('Email/password auth enabled', { gcpProjectId });
+    } catch (err: any) {
+      logger.error('Failed to enable email/password auth', { gcpProjectId, error: err.message });
     }
   } catch (err: any) {
     logger.error('Failed to add Firebase', { gcpProjectId, error: err.message });
@@ -761,6 +772,58 @@ service cloud.firestore {
     }
 
     return; // Success
+  }
+}
+
+// ─── Firebase Auth ─────────────────────────────────────────────────────
+
+/**
+ * Enable email/password sign-in provider on a Firebase project.
+ * This is done during provisioning so apps can test auth in the WebContainer
+ * preview (OAuth providers like Google require domain whitelisting and don't
+ * work in ephemeral preview URLs).
+ *
+ * Uses the Identity Toolkit Admin API to update the project's auth config.
+ */
+async function enableEmailPasswordAuth(projectId: string): Promise<void> {
+  // Get current config first
+  const getRes = await gcpFetch(
+    `https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config`
+  );
+
+  if (!getRes.ok) {
+    const err = await getRes.json().catch(() => ({}));
+    throw new Error(`Failed to get auth config: ${err.error?.message || getRes.statusText}`);
+  }
+
+  const config = await getRes.json();
+
+  // Check if email/password is already enabled
+  const signInConfig = config.signIn || {};
+  const emailConfig = signInConfig.email || {};
+  if (emailConfig.enabled) {
+    return; // Already enabled
+  }
+
+  // Enable email/password provider
+  const updateRes = await gcpFetch(
+    `https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config?updateMask=signIn.email.enabled,signIn.email.passwordRequired`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        signIn: {
+          email: {
+            enabled: true,
+            passwordRequired: true,
+          },
+        },
+      }),
+    }
+  );
+
+  if (!updateRes.ok) {
+    const err = await updateRes.json().catch(() => ({}));
+    throw new Error(`Failed to enable email/password auth: ${err.error?.message || updateRes.statusText}`);
   }
 }
 

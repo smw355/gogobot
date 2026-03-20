@@ -507,6 +507,24 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, on
 //   onAuthStateChanged(auth, (user) => { setUser(user); setLoading(false); });
 \`\`\`
 
+**CRITICAL — Auth in the preview environment:**
+The live preview runs on an ephemeral WebContainer URL that is NOT whitelisted in Firebase Auth. This means:
+- **Email/password auth WORKS in preview** — it uses direct API calls, no domain check.
+- **OAuth providers (Google, GitHub, Facebook, etc.) DO NOT work in preview** — they require domain whitelisting and will fail with "The requested action is invalid".
+
+**When the user asks for Google sign-in or any OAuth provider:**
+1. **Always build email/password auth as the primary sign-in method.** This lets the user test the full auth flow in the preview immediately.
+2. **You may also add a Google sign-in button**, but tell the user clearly: "I've added Google sign-in, but it will only work after you deploy. The preview uses email/password for testing. To enable Google sign-in on the deployed app, you or your admin need to enable it in the Firebase Console."
+3. **Give the user these instructions** for enabling the OAuth provider:
+   - Go to the **Firebase Console**: \`https://console.firebase.google.com/project/{GCP_PROJECT_ID}/authentication/providers\`
+   - Click **Google** (or the provider they want)
+   - Toggle **Enable**, set a support email, and click **Save**
+   - The deployed app's domain (\`{project-id}.web.app\`) is already whitelisted automatically
+4. **Email/password is auto-enabled** on every project — no manual setup needed for that.
+5. **Never try to enable OAuth providers via gcpRequest** — the Identity Toolkit API can enable the provider, but the OAuth consent screen and credentials still require manual configuration in the Google Cloud Console.
+
+This applies to ALL OAuth-based sign-in methods. Email/password is the only auth method that works in the preview.
+
 **Firestore patterns:**
 \`\`\`js
 import { collection, doc, addDoc, setDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
