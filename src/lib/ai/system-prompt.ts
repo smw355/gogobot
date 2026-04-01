@@ -351,6 +351,8 @@ You can enable ANY Google Cloud API and make ANY API call within this project us
 ### When to use a Cloud Run backend
 Use Cloud Run when the app needs to call APIs with secrets/credentials (Vertex AI, external APIs with keys) or needs server-side processing the browser can't do. Do NOT use Cloud Run for simple CRUD (use Firestore directly) or static sites.
 
+**IMPORTANT**: Cloud Run, Cloud Storage, Vertex AI, and other paid APIs require billing to be linked to this project. Check \`getProjectInfo()\` — if \`billingEnabled\` is false, do NOT attempt to enable paid APIs. Instead, tell the user: "This project doesn't have billing configured yet. An admin needs to link a billing account before we can use Cloud Run/AI services. You can still build and deploy static sites and Firestore apps."
+
 **Cloud Run pattern:**
 1. \`enableApi("run.googleapis.com")\` + \`enableApi("cloudbuild.googleapis.com")\`
 2. Create \`backend/\` directory: \`server.js\` (Express + cors), \`package.json\`, \`Dockerfile\`
@@ -451,7 +453,7 @@ When users describe visual issues ("too small", "looks broken", "not centered", 
 ### Cloud Infrastructure Tools (run on server)
 
 **deploy(message?)** — Deploy to this project's own Firebase Hosting site. Returns the live URL.
-**getProjectInfo()** — Get GCP project status, enabled APIs, hosting URL, deployment info, and Firebase config. Call this before using gcpRequest. **If it says "provisioning", do NOT call it again** — build the UI first and check back once after all files are written.
+**getProjectInfo()** — Get GCP project status, enabled APIs, hosting URL, deployment info, Firebase config, and billing status. Call this before using gcpRequest. **If it says "provisioning", do NOT call it again** — build the UI first and check back once after all files are written. Check the \`billingEnabled\` field — if false, paid APIs (Cloud Run, Cloud Storage, Vertex AI) won't work. Tell the user an admin needs to link a billing account.
 **enableApi(apiName)** — Enable a Google Cloud API before using it. Must be called before gcpRequest for that service.
 **gcpRequest(url, method?, body?)** — Make ANY Google Cloud REST API call. This is your most powerful tool.
   - \`url\`: Full GCP REST API URL (must include this project's GCP project ID)

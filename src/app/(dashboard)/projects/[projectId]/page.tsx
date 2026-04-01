@@ -380,6 +380,16 @@ export default function ProjectPage() {
         </div>
       )}
 
+      {/* Billing warning banner */}
+      {project.gcpProject?.status === 'ready' && project.gcpProject?.billingEnabled === false && (
+        <div className="flex items-center gap-3 border-b border-yellow-200 bg-yellow-50 px-4 py-2.5 dark:border-yellow-800 dark:bg-yellow-900/20">
+          <AlertCircle className="h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400" />
+          <p className="text-sm text-yellow-800 dark:text-yellow-300">
+            Billing is not linked to this project. You can deploy static sites and use Firestore, but paid services (Cloud Run, Cloud Storage, Vertex AI) won&apos;t work until an admin links a billing account.
+          </p>
+        </div>
+      )}
+
       {/* Chat Interface */}
       <div className="flex-1 overflow-hidden">
         <ChatInterface project={project} deployRef={deployRef} onWorkspaceStatusChange={setWorkspaceStatus} />

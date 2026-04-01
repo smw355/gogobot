@@ -67,6 +67,7 @@ export interface GcpProjectConfig {
   region: string;              // e.g. "us-central1"
   status: GcpProjectStatus;
   enabledApis: string[];       // e.g. ["firebasehosting.googleapis.com"]
+  billingEnabled?: boolean;    // Whether billing account was successfully linked
   error?: string;              // Error message if status === 'error'
   createdAt: Date;
 }

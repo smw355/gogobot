@@ -158,6 +158,7 @@ export async function POST(
           };
         } else {
           const status = await getGcpProjectStatus(gcpProjectId);
+          const billingEnabled = project.gcpProject?.billingEnabled ?? true; // default true for older projects
           result = {
             success: true,
             gcpProjectId,
@@ -167,7 +168,11 @@ export async function POST(
             provisioningStatus: project.gcpProject?.status,
             enabledApis: status.enabledApis || project.gcpProject?.enabledApis || [],
             firebaseConfig: project.gcpProject?.firebaseConfig || null,
+            billingEnabled,
             deployment: project.deployment || null,
+            ...(billingEnabled ? {} : {
+              billingWarning: 'Billing is NOT linked to this project. You can deploy static sites to Firebase Hosting and use Firestore, but paid APIs (Cloud Run, Cloud Storage, Vertex AI) will fail. Tell the user that billing needs to be configured by an admin before paid services can be used.',
+            }),
           };
         }
         break;
@@ -204,7 +209,16 @@ export async function POST(
           }
           result = { success: true, message: `Enabled ${apiName}` };
         } catch (err: any) {
-          result = { success: false, error: err.message };
+          const msg = err.message || '';
+          // Detect billing-related failures and give actionable guidance
+          if (/billing|payment|account.*not.*found|BILLING_DISABLED/i.test(msg)) {
+            result = {
+              success: false,
+              error: `Failed to enable ${apiName}: billing is not configured for this project. ${apiName} requires an active billing account. Tell the user that an admin needs to link a billing account before paid APIs can be used. You can still deploy static sites to Firebase Hosting and use Firestore.`,
+            };
+          } else {
+            result = { success: false, error: msg };
+          }
         }
         break;
       }

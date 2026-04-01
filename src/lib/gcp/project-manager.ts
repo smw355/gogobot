@@ -267,6 +267,7 @@ export interface CreateProjectResult {
     messagingSenderId?: string;
     appId: string;
   };
+  billingEnabled: boolean;
   error?: string;
 }
 
@@ -328,9 +329,11 @@ export async function createGcpProject(
   logger.info('GCP project created', { gcpProjectId, projectNumber });
 
   // Step 3: Link billing account
+  let billingEnabled = false;
   if (billingAccountId) {
     try {
       await linkBillingAccount(gcpProjectId, billingAccountId);
+      billingEnabled = true;
       logger.info('Billing linked', { gcpProjectId });
     } catch (err: any) {
       logger.error('Failed to link billing', { gcpProjectId, error: err.message });
@@ -411,6 +414,7 @@ export async function createGcpProject(
     userFolderId,
     firebaseAppId,
     firebaseConfig,
+    billingEnabled,
   };
 }
 

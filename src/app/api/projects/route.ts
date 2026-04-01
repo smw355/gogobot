@@ -86,6 +86,7 @@ async function provisionGcpProject(
       'gcpProject.userFolderId': result.userFolderId || null,
       'gcpProject.firebaseAppId': result.firebaseAppId || null,
       'gcpProject.firebaseConfig': result.firebaseConfig || null,
+      'gcpProject.billingEnabled': result.billingEnabled ?? false,
       'gcpProject.status': 'ready',
       updatedAt: new Date(),
     });
