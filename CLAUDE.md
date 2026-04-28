@@ -260,13 +260,15 @@ If you need to request the folder + permissions from your org admin, here's a te
 
 ## Tech Stack
 
-- **Frontend**: Next.js 14 (App Router), React 18, TailwindCSS
-- **AI**: Gemini 3 Pro Preview via Vertex AI SDK (location: global), fallback to Gemini 2.5 Pro (us-central1)
+- **Frontend**: Next.js 16 (App Router), React 18, TailwindCSS
+- **AI**: Gemini 3.1 Pro Preview via Vertex AI SDK (location: global), fallback to Gemini 3 Flash Preview (global)
 - **Browser Runtime**: StackBlitz WebContainers API
 - **Auth**: Firebase Authentication (Email/Password)
 - **Database**: Firestore (platform data)
 - **GCP Management**: google-auth-library + REST APIs (Resource Manager, Service Usage, Firebase Management, Firebase Hosting)
 - **Deployment**: Per-project Firebase Hosting via REST API
+- **CI/CD**: Cloud Build → typecheck → Docker → GCR → Cloud Run (auto-deploy on push to main)
+- **Logging**: Structured JSON logger (Cloud Logging compatible in production)
 
 ## Key Features
 
@@ -279,6 +281,14 @@ If you need to request the folder + permissions from your org admin, here's a te
 - **Real Firebase Hosting Deployment** - Hash-based file upload to project-specific hosting sites
 - **Server-Side GCP Tools** - AI can query project info, enable APIs, view logs
 - **Billing Labels** - All GCP projects labeled for per-user cost tracking
+- **Project Category Picker** - Users choose app type at creation (static, database, multi-user, AI-powered) for better AI guidance
+- **Auto-Provisioning** - Firestore database, security rules, Storage CORS, and email/password auth configured automatically
+- **Provisioning Retry** - Failed provisioning shows error banner with retry button
+- **Billing Visibility** - Tracks billing link status; AI and UI warn when billing is missing
+- **Agent Loop Protection** - Stall detection blocks repeated identical tool calls, auto-recovers from Vite HMR cache issues
+- **Admin Dashboard** - Resource usage, project status, and per-user cost tracking via BigQuery billing export
+- **Structured Logging** - JSON logs with severity levels for Cloud Logging integration
+- **Health Check** - `/api/health` endpoint for Cloud Run monitoring
 
 ## Project Structure
 
@@ -287,10 +297,20 @@ src/
 ├── app/
 │   ├── (auth)/login/           # Login page
 │   ├── (dashboard)/
-│   │   ├── projects/           # Project list and editor
-│   │   └── settings/           # Admin settings
+│   │   ├── projects/
+│   │   │   ├── page.tsx        # Project list
+│   │   │   ├── new/page.tsx    # New project with category picker
+│   │   │   └── [projectId]/    # Project editor (chat + preview)
+│   │   └── settings/
+│   │       ├── dashboard/      # Admin resource/cost dashboard
+│   │       ├── projects/       # Admin project management
+│   │       └── ...             # General, invites, etc.
 │   └── api/
+│       ├── admin/
+│       │   ├── dashboard/      # Admin dashboard aggregation API
+│       │   └── costs/          # GCP billing/cost data API (BigQuery)
 │       ├── auth/               # Session management
+│       ├── health/             # Health check endpoint
 │       └── projects/
 │           ├── route.ts        # POST: Create project + GCP provisioning
 │           └── [projectId]/
@@ -298,26 +318,30 @@ src/
 │               ├── deploy/     # Real Firebase Hosting deployment
 │               ├── tools/      # Server-side GCP tool execution
 │               ├── messages/   # Chat history persistence
-│               └── snapshot/   # File snapshots
+│               ├── snapshot/   # File snapshots
+│               └── retry-provision/ # Retry failed provisioning
 ├── components/
 │   ├── chat/                   # Chat interface components
+│   ├── secrets/                # Secrets management panel
+│   ├── assets/                 # Asset upload panel
 │   └── ui/                     # Basic UI components
 ├── hooks/
 │   ├── useAuth.ts              # Auth state
-│   └── useChat.ts              # Chat + tool execution (agentic loop)
+│   └── useChat.ts              # Chat + tool execution (agentic loop with stall detection)
 ├── lib/
 │   ├── ai/
 │   │   ├── api-client.ts       # Client-side streaming API client
-│   │   ├── system-prompt.ts    # GCP-aware system prompt with dynamic context
+│   │   ├── system-prompt.ts    # GCP-aware system prompt with dynamic context + category blueprints
 │   │   ├── tool-executor.ts    # Routes tools: WebContainer (local) vs GCP (server-side)
 │   │   ├── tools.ts            # Gemini function declarations (15 tools)
 │   │   └── types.ts            # AI types (Message, ToolCall, etc.)
 │   ├── gcp/
-│   │   ├── project-manager.ts  # GCP project + folder lifecycle
+│   │   ├── project-manager.ts  # GCP project + folder lifecycle + auto-config
 │   │   └── firebase-hosting.ts # Firebase Hosting deployment via REST API
 │   ├── firebase/               # Firebase config (client + admin)
 │   ├── auth/                   # Session verification
-│   └── webcontainer/           # WebContainer manager
+│   ├── logger.ts               # Structured JSON logger (Cloud Logging compatible)
+│   └── webcontainer/           # WebContainer manager (singleton, project-switching)
 └── types/                      # TypeScript types (Project, GcpProjectConfig, etc.)
 ```
 
@@ -329,7 +353,7 @@ Tools are split into two categories:
 `writeFile`, `patchFile`, `readFile`, `deleteFile`, `listFiles`, `runCommand`, `searchFiles`, `getErrors`, `getConsoleOutput`, `installPackage`
 
 ### Server-Side Tools (execute via API with GCP credentials)
-`deploy`, `getProjectInfo`, `enableApi`, `viewLogs`, `gcpRequest`
+`deploy`, `getProjectInfo`, `enableApi`, `viewLogs`, `gcpRequest`, `getSecrets`, `getSecretValue`, `listAssets`
 
 The `ToolExecutor` routes server-side tools to `/api/projects/{id}/tools` which executes them with the platform's GCP service account credentials. `gcpRequest` is a general-purpose tool that lets the AI make any GCP REST API call within the project's scope (URL must reference the project's GCP project ID, blocked from IAM/org/billing operations).
 
@@ -340,15 +364,26 @@ The `ToolExecutor` routes server-side tools to `/api/projects/{id}/tools` which 
 - Rate limit retries: 3 attempts with 5s/15s/30s backoff before falling back
 - Fallback triggers on: 429, 503, 500 errors, or model unavailability
 
+## Agent Loop & Stall Detection
+
+The agentic loop in `useChat.ts` iterates up to 40 tool calls per user message. Two protection layers prevent infinite loops:
+- **Per-tool hard block**: After 3 identical calls (same tool + same args), execution is blocked and an error returned
+- **Per-iteration nudge**: After 3 identical iteration signatures, a "move on" system message is injected
+- **Vite auto-recovery**: `writeFile` detects stale "Failed to resolve import" errors and auto-restarts the dev server
+- **getProjectInfo caching**: Client-side 30s TTL cache during provisioning to avoid redundant server calls
+
 ## GCP Project Lifecycle
 
-1. User creates a Gogobot project → API creates Firestore doc with `gcpProject.status: 'provisioning'`
+1. User creates a Gogobot project (with category selection) → API creates Firestore doc with `gcpProject.status: 'provisioning'`
 2. Background async:
    a. `getOrCreateUserFolder()` → checks Firestore for existing folder, creates one if needed
    b. `createGcpProject()` → creates project inside user's folder → links billing → enables APIs → adds Firebase
+   c. Auto-configures: Firestore database + open security rules, Storage CORS, email/password auth
+   d. Tracks `billingEnabled` success/failure
 3. Firestore updated with `gcpProject.status: 'ready'` and project details
 4. AI can now deploy to the project's own Firebase Hosting site
-5. AI can enable additional APIs (Cloud Run, Cloud Storage, etc.) as needed
+5. AI can enable additional APIs (Cloud Run, Cloud Storage, etc.) as needed — if billing is linked
+6. If provisioning fails, user sees error banner with retry button
 
 ## Data Model
 
@@ -357,6 +392,7 @@ The `ToolExecutor` routes server-side tools to `/api/projects/{id}/tools` which 
 /users/{userId}           # User profiles with role
   gcpFolderId             # Per-user GCP folder ID (auto-created on first project)
 /projects/{projectId}     # User projects
+  category                # static-website | app-with-database | multi-user-app | ai-powered-app | something-else
   gcpProject: {           # Per-project GCP isolation config
     projectId             # GCP project ID (e.g., "gogobot-p-abc123-x7k2")
     hostingSiteId         # Firebase Hosting site ID
@@ -365,6 +401,8 @@ The `ToolExecutor` routes server-side tools to `/api/projects/{id}/tools` which 
     region                # GCP region
     status                # provisioning | ready | error | deleted
     enabledApis[]         # Enabled GCP APIs
+    billingEnabled        # Whether billing account was successfully linked
+    firebaseConfig        # Client-side Firebase SDK config (apiKey, authDomain, etc.)
   }
   /messages/{messageId}   # Chat history
   /snapshots/{snapshotId} # File snapshots
@@ -385,6 +423,16 @@ npm run build    # Build for production
 npm run lint     # Run ESLint
 ```
 
+## CI/CD Pipeline
+
+Push to `main` triggers Cloud Build (`cloudbuild.yaml`):
+1. **Typecheck**: `npx tsc --noEmit` — fails build on type errors
+2. **Docker build**: Multi-stage Node.js build
+3. **Push to GCR**: `gcr.io/gogobot-dev-6029b/gogobot`
+4. **Deploy to Cloud Run**: Auto-deploys with env vars from Secret Manager
+
+Build takes ~5-6 minutes end-to-end.
+
 ## Notes
 
 - WebContainers only work in Chromium-based browsers
@@ -393,3 +441,6 @@ npm run lint     # Run ESLint
 - Each user's projects are grouped in a GCP folder (user-{name})
 - GCP projects also have billing labels: `gogobot-user`, `gogobot-project`, `managed-by`
 - SA is scoped to ONE folder — can't touch anything else in the org
+- OAuth providers (Google, GitHub) require manual Firebase Console setup — email/password is auto-enabled and works in preview
+- Billing account has a default 5-project quota — request increase for production use
+- WebContainer singleton persists across project switches — `resetForNewProject()` clears state when navigating between projects
